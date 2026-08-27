@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Raft Fast Backup - Los 3 Casos</title>
+    <link rel="stylesheet" href="../styles/raft-theme.css">
+    <style>
+        /* Ajuste específico para acomodar 3 paneles horizontalmente */
+        .timeline-controls { gap: 15px; margin-top: 40px; padding-bottom: 30px; }
+        .timeline-panel { padding: 15px 15px; min-width: 0; }
+        .timeline-header { font-size: 15px; margin-bottom: 10px; flex-direction: column; align-items: flex-start; gap: 8px; }
+        .step-desc { 
+            height: 45px; /* Fijado a 45px para que la caja no cambie de tamaño */
+            font-size: 13.5px; 
+            margin-bottom: 10px; 
+            align-items: flex-start; 
+        }
+        .play-controls { flex-wrap: wrap; justify-content: center; }
+        button { padding: 6px 10px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="raft-wrapper" id="raft-wrapper">
+        <div class="velocity-bar">
+            <span>Velocidad Auto Play:</span>
+            <input type="range" id="slider-speed" min="0.1" max="2" step="0.1" value="0.8" style="width: 200px; margin: 0;">
+            <span id="speed-val">0.80x</span>
+            <button onclick="toggleMaximize()" class="highlight-btn" style="margin-left: auto;" id="btn-maximize">🔲 Pantalla Completa</button>
+            <button onclick="resetAll()">🔄 Reset All States</button>
+        </div>
+
+        <div class="dashboard" id="dashboard">
+            <table class="board">
+                <thead>
+                    <tr>
+                        <th style="width: 70px;"></th>
+                        <th style="width: 75px;" class="idx-header">10</th><th style="width: 75px;" class="idx-header">11</th>
+                        <th style="width: 75px;" class="idx-header">12</th><th style="width: 75px;" class="idx-header">13</th>
+                        <th class="rpc-header" id="hdr-rpc-S3" style="width: 170px;">RPC L &lt;-&gt; S3<br><span style="font-size:12px; font-weight:normal;">(Case 3: Log Corto)</span></th>
+                        <th class="rpc-header" id="hdr-rpc-S2" style="width: 170px;">RPC L &lt;-&gt; S2<br><span style="font-size:12px; font-weight:normal;">(Case 2: Term Conflict) <br>-Lider SI tiene término-</span></th>
+                        <th class="rpc-header" id="hdr-rpc-S1" style="width: 170px;">RPC L &lt;-&gt; S1<br><span style="font-size:12px; font-weight:normal;">(Case 1: Term Conflict) <br>-Lider NO tiene término-</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td class="td-label first-row-padding"><div class="node-label follower-label" id="label-S1">S1</div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-10"></div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-11"></div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-12"></div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-13"></div></td><td class="rpc-zone first-row-padding" rowspan="2"></td><td class="rpc-zone first-row-padding" rowspan="2"></td><td class="rpc-zone first-row-padding" rowspan="2"></td></tr>
+                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S1"></div></td></tr>
+                    
+                    <tr><td class="td-label"><div class="node-label follower-label" id="label-S2">S2</div></td><td class="td-cell"><div class="cell" id="c-S2-10"></div></td><td class="td-cell"><div class="cell" id="c-S2-11"></div></td><td class="td-cell"><div class="cell" id="c-S2-12"></div></td><td class="td-cell"><div class="cell" id="c-S2-13"></div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
+                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S2"></div></td></tr>
+
+                    <tr><td class="td-label"><div class="node-label follower-label" id="label-S3">S3</div></td><td class="td-cell"><div class="cell" id="c-S3-10"></div></td><td class="td-cell"><div class="cell" id="c-S3-11"></div></td><td class="td-cell"><div class="cell" id="c-S3-12"></div></td><td class="td-cell"><div class="cell" id="c-S3-13"></div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
+                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S3"></div></td></tr>
+                    
+                    <tr><td class="td-label"><div class="node-label leader-label" id="label-L">L*</div></td><td class="td-cell"><div class="cell has-data" id="c-L-10">4</div></td><td class="td-cell"><div class="cell has-data" id="c-L-11">6</div></td><td class="td-cell"><div class="cell has-data" id="c-L-12">6</div></td><td class="td-cell"><div class="cell empty-cell" id="c-L-13">-</div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
+                    <tr><td colspan="5" class="td-eval" style="border: none;"><div class="row-eval" id="eval-L"></div></td></tr>
+                </tbody>
+            </table>
+            <div id="packet-S1" class="flying-packet"></div>
+            <div id="packet-S2" class="flying-packet"></div>
+            <div id="packet-S3" class="flying-packet"></div>
+        </div>
+
+        <div class="timeline-controls">
+            <div class="timeline-panel">
+                <div class="timeline-header"><span>S1 - Caso 1 [4, 5, 5]</span><span>nextIndex = <span class="var-val" id="ni-S1">13</span></span></div>
+                <div class="step-desc" id="desc-S1"></div>
+                <input type="range" id="scrubber-S1" min="0" max="11" value="0">
+                <div class="play-controls"><button id="btn-play-S1" class="primary" onclick="togglePlay('S1')">▶ Auto-Play</button><button id="btn-prev-S1" onclick="step('S1', -1)">◀</button><button id="btn-next-S1" onclick="step('S1', 1)">▶</button></div>
+            </div>
+            <div class="timeline-panel">
+                <div class="timeline-header"><span>S2 - Caso 2 [4, 4, 4]</span><span>nextIndex = <span class="var-val" id="ni-S2">13</span></span></div>
+                <div class="step-desc" id="desc-S2"></div>
+                <input type="range" id="scrubber-S2" min="0" max="11" value="0">
+                <div class="play-controls"><button id="btn-play-S2" class="primary" onclick="togglePlay('S2')">▶ Auto-Play</button><button id="btn-prev-S2" onclick="step('S2', -1)">◀</button><button id="btn-next-S2" onclick="step('S2', 1)">▶</button></div>
+            </div>
+            <div class="timeline-panel">
+                <div class="timeline-header"><span>S3 - Caso 3 [4]</span><span>nextIndex = <span class="var-val" id="ni-S3">13</span></span></div>
+                <div class="step-desc" id="desc-S3"></div>
+                <input type="range" id="scrubber-S3" min="0" max="11" value="0">
+                <div class="play-controls"><button id="btn-play-S3" class="primary" onclick="togglePlay('S3')">▶ Auto-Play</button><button id="btn-prev-S3" onclick="step('S3', -1)">◀</button><button id="btn-next-S3" onclick="step('S3', 1)">▶</button></div>
+            </div>
+        </div>
+        <div class="slogan-footer">TA050 - Sistemas Distribuidos I - Cátedra Espina</div>
+    </div>
+    
+    <script>
+        const rpcTitle = (title, color) => `<div style="border-bottom: 2px solid ${color}; margin-bottom: 8px; padding-bottom: 6px; font-size: 14px; font-weight: 900; text-transform: uppercase; text-align: center; color: ${color}; letter-spacing: 1px;">${title}</div>`;
+
+        const reqTxt = (idx, term, entries) => `${rpcTitle('AppendEntries', '#856404')}<span style="color:#856404">prevIdx = ${idx}<br>prevTerm = ${term}<br>entries = [${entries}]</span>`;
+        const accTxt = () => `${rpcTitle('Response', '#155724')}<span style="color:#155724">term = 6<br>success = true</span>`;
+        
+        const fastRejTxt = (term, xterm, xindex, xlen) => {
+            let txt = `${rpcTitle('Response', '#721C24')}<span style="color:#721C24; display:block; line-height:1.4;">term = ${term}<br>success = false`;
+            if (xterm !== 'None') txt += `<br><b>XTerm</b> = ${xterm}`;
+            if (xindex !== 'None') txt += `<br><b>XIndex</b> = ${xindex}`;
+            txt += `<br><b>XLen</b> = ${xlen}</span>`;
+            return txt;
+        };
+        
+        const wait = `<span style="color:#6c757d">Evaluando AppendEntries...</span>`;
+        const tooShort = `<span style="color:#B31412">❌ Rechazado: Log es demasiado corto</span>`;
+        const mismatch = `<span style="color:#B31412">❌ Rechazado: Term no coincide!</span>`;
+        const match = `<span style="color:#0F5132">✅ Aceptado: match index y term!</span>`;
+        const synced = `<span style="color:#0F5132">✅ Los logs ahora están sincronizados</span>`;
+
+        // LÍNEA DE TIEMPO S1 (CASE 1)
+        const S1_TL = [
+            { d: "Estado Inicial. L asume liderazgo. S1 tiene un fork divergente [4, 5, 5].", lL: [4, 6, 6], l: [4, 5, 5], ni: 13, h: null, pkt: null },
+            { d: "Cliente envía comando. L lo anexa al index 13.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, cInsert: 13, eL: `<span class="client-msg">📥 Request del Cliente</span>`, pkt: null },
+            { d: "L envía entrada 13 validando contra prevLogIndex=12 y prevLogTerm=6.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "RPC viaja a S1. S1 busca el index 12.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: 12, e: wait, pkt: { loc: 'S1', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "S1 tiene Term 5 en index 12. ¡Mismatch con Term 6 del líder!", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: 12, e: mismatch, pkt: { loc: 'S1', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "S1 rechaza. FAST BACKUP: Retorna XTerm=5, XIndex=11 y XLen=13.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "L busca Term 5 en su log. ¡No lo tiene! Salta nextIndex al XIndex (11).", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "RPC viaja a S1 enviando [6, 6, 6] y validando prevLogIndex=10.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 11, h: 10, e: wait, pkt: { loc: 'S1', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S1 TIENE index 10 con Term 4! MATCH exitoso.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 11, h: 10, e: match, pkt: { loc: 'S1', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S1 borra entradas obsoletas y anexa [6, 6, 6].", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, e: "Sobrescribe entradas conflictivas.", pkt: { loc: 'S1', type: 'accept', txt: accTxt() } },
+            { d: "S1 devuelve success=true al líder.", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "L actualiza nextIndex a 14. ¡Sincronizado!", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 14, h: null, e: synced, pkt: null }
+        ];
+
+        // LÍNEA DE TIEMPO S2 (CASE 2)
+        const S2_TL = [
+            { d: "Estado Inicial. S2 tiene un fork con [4, 4, 4].", lL: [4, 6, 6], l: [4, 4, 4], ni: 13, h: null, pkt: null },
+            { d: "Cliente envía comando. L lo anexa al index 13.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, cInsert: 13, eL: `<span class="client-msg">📥 Request del Cliente</span>`, pkt: null },
+            { d: "L envía entrada 13 validando contra prevLogIndex=12 y prevLogTerm=6.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "RPC viaja a S2. S2 busca el index 12.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: 12, e: wait, pkt: { loc: 'S2', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "S2 tiene Term 4 en index 12. ¡Mismatch con Term 6 del líder!", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: 12, e: mismatch, pkt: { loc: 'S2', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4, XIndex=10 y XLen=13.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "L busca Term 4 en su log. ¡Lo tiene! Su último index de Term 4 es 10. Fija nextIndex=11.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "RPC viaja a S2 enviando [6, 6, 6] y validando prevLogIndex=10.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 11, h: 10, e: wait, pkt: { loc: 'S2', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S2 TIENE index 10 con Term 4! MATCH exitoso.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 11, h: 10, e: match, pkt: { loc: 'S2', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S2 borra entradas obsoletas y anexa [6, 6, 6].", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, e: "Sobrescribe entradas conflictivas.", pkt: { loc: 'S2', type: 'accept', txt: accTxt() } },
+            { d: "S2 devuelve success=true al líder.", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "L actualiza nextIndex a 14. ¡Sincronizado!", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 14, h: null, e: synced, pkt: null }
+        ];
+
+        // LÍNEA DE TIEMPO S3 (CASE 3)
+        const S3_TL = [
+            { d: "Estado Inicial. S3 tiene un log muy corto [4].", lL: [4, 6, 6], l: [4], ni: 13, h: null, pkt: null },
+            { d: "Cliente envía comando. L lo anexa al index 13.", lL: [4, 6, 6, 6], l: [4], ni: 13, cInsert: 13, eL: `<span class="client-msg">📥 Request del Cliente</span>`, pkt: null },
+            { d: "L envía entrada 13 validando contra prevLogIndex=12 y prevLogTerm=6.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "RPC viaja a S3. S3 busca el index 12.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: 12, e: wait, pkt: { loc: 'S3', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "El log de S3 termina en 10. No tiene index 12. Falla.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: 12, e: tooShort, pkt: { loc: 'S3', type: 'reject', txt: fastRejTxt(6, 'None', 'None', 11) } },
+            { d: "S3 rechaza. FAST BACKUP: Retorna la longitud total de su log XLen=11.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 'None', 'None', 11) } },
+            { d: "L recibe XLen=11. ¡Salta nextIndex directamente a 11!", lL: [4, 6, 6, 6], l: [4], ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "RPC viaja a S3 enviando [6, 6, 6] validando prevLogIndex=10.", lL: [4, 6, 6, 6], l: [4], ni: 11, h: 10, e: wait, pkt: { loc: 'S3', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S3 TIENE index 10 con Term 4! MATCH exitoso.", lL: [4, 6, 6, 6], l: [4], ni: 11, h: 10, e: match, pkt: { loc: 'S3', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S3 anexa [6, 6, 6].", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, e: "S3 actualiza su log.", pkt: { loc: 'S3', type: 'accept', txt: accTxt() } },
+            { d: "S3 devuelve success=true al líder.", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "L actualiza nextIndex a 14. ¡Sincronizado!", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 14, h: null, e: synced, pkt: null }
+        ];
+        
+        let state = {
+            'S1': { step: 0, max: S1_TL.length - 1, data: S1_TL, playing: false },
+            'S2': { step: 0, max: S2_TL.length - 1, data: S2_TL, playing: false },
+            'S3': { step: 0, max: S3_TL.length - 1, data: S3_TL, playing: false }
+        };
+        
+        let velocity = 0.8; 
+        let globalPausedServers = [];
+        let lastActiveServer = 'S1'; 
+        let isMaximized = false;
+
+        function getRelativePos(el, parent) {
+            let top = 0, left = 0;
+            while (el && el !== parent) {
+                top += el.offsetTop;
+                left += el.offsetLeft;
+                el = el.offsetParent;
+            }
+            return { top, left };
+        }
+
+        function toggleMaximize() {
+            if (!document.fullscreenElement) {
+                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => {
+            const wrapper = document.getElementById('raft-wrapper');
+            const btn = document.getElementById('btn-maximize');
+            if (document.fullscreenElement) {
+                isMaximized = true; wrapper.classList.add('maximized');
+                btn.innerHTML = "🔳 Minimizar"; document.body.style.overflow = "hidden";
+            } else {
+                isMaximized = false; wrapper.classList.remove('maximized');
+                btn.innerHTML = "🔲 Pantalla Completa"; document.body.style.overflow = "auto";
+            }
+            setTimeout(() => { renderFollower('S1'); renderFollower('S2'); renderFollower('S3'); }, 300);
+        });
+
+        function updateLeaderHighlights() {
+            const activeState = state[lastActiveServer];
+            const frame = activeState.data[activeState.step];
+            const prevTarget = frame.tp;
+            const entryTargets = frame.te || [];
+
+            for (let i = 10; i <= 13; i++) {
+                const lCell = document.getElementById(`c-L-${i}`);
+                if (lCell) {
+                    lCell.classList.remove('prev-index-marker');
+                    if (prevTarget === i) lCell.classList.add('prev-index-marker');
+                }
+            }
+
+            let boundingBox = document.getElementById('entries-box-global');
+            if (!boundingBox) {
+                boundingBox = document.createElement('div');
+                boundingBox.id = 'entries-box-global';
+                boundingBox.className = 'entries-bounding-box';
+                document.getElementById('dashboard').appendChild(boundingBox);
+            }
+
+            if (entryTargets.length > 0) { 
+                const firstCell = document.getElementById(`c-L-${entryTargets[0]}`);
+                const lastCell = document.getElementById(`c-L-${entryTargets[entryTargets.length - 1]}`);
+                const dashRect = document.getElementById('dashboard');
+
+                if (firstCell && lastCell) {
+                    const firstPos = getRelativePos(firstCell, dashRect);
+                    const lastPos = getRelativePos(lastCell, dashRect);
+                    const offset = 10; 
+
+                    const left = firstPos.left - offset;
+                    const top = firstPos.top - offset;
+                    const width = (lastPos.left + lastCell.offsetWidth) - firstPos.left + (offset * 2);
+                    const height = firstCell.offsetHeight + (offset * 2);
+
+                    boundingBox.style.top = `${top}px`;
+                    boundingBox.style.left = `${left}px`;
+                    boundingBox.style.width = `${width}px`;
+                    boundingBox.style.height = `${height}px`;
+                    boundingBox.style.opacity = '1';
+                    boundingBox.innerHTML = '<span class="entries-box-label">ENTRIES</span>';
+                }
+            } else {
+                boundingBox.style.opacity = '0';
+            }
+        }
+
+        function renderFollower(server) {
+            const current = state[server];
+            const frame = current.data[current.step];
+            
+            document.getElementById(`desc-${server}`).innerHTML = frame.d || "";
+            document.getElementById(`ni-${server}`).innerText = frame.ni;
+            document.getElementById(`scrubber-${server}`).value = current.step;
+            document.getElementById(`eval-${server}`).innerHTML = frame.e || ""; 
+            document.getElementById(`btn-prev-${server}`).disabled = (current.step === 0);
+            document.getElementById(`btn-next-${server}`).disabled = (current.step === current.max);
+
+            for (let i = 0; i < 4; i++) {
+                const actualIdx = i + 10;
+                const fCell = document.getElementById(`c-${server}-${actualIdx}`);
+                if (fCell) {
+                    fCell.className = 'cell'; 
+                    if (frame.l[i] !== undefined) {
+                        fCell.innerHTML = frame.l[i]; fCell.classList.add('has-data');
+                    } else {
+                        fCell.innerHTML = '-'; fCell.classList.add('empty-cell');
+                    }
+                    if (frame.h === actualIdx) fCell.classList.add('highlight');
+                    if (frame.del === actualIdx) fCell.classList.add('vanish');
+                }
+            }
+
+            if (frame.lL) {
+                for (let i = 0; i < 4; i++) {
+                    const actualIdx = i + 10;
+                    const lCell = document.getElementById(`c-L-${actualIdx}`);
+                    if (lCell) {
+                        lCell.className = 'cell'; 
+                        if (frame.lL[i] !== undefined) {
+                            lCell.innerHTML = frame.lL[i]; lCell.classList.add('has-data');
+                        } else {
+                            lCell.innerHTML = '-'; lCell.classList.add('empty-cell');
+                        }
+                        if (frame.cInsert === actualIdx) lCell.classList.add('client-insert'); 
+                    }
+                }
+            }
+
+            if (server === lastActiveServer) {
+                updateLeaderHighlights();
+                document.getElementById('eval-L').innerHTML = frame.eL || "";
+            }
+
+            const packetEl = document.getElementById(`packet-${server}`);
+            if (!frame.pkt) {
+                packetEl.style.opacity = '0';
+                packetEl.style.pointerEvents = 'none';
+            } else {
+                packetEl.innerHTML = frame.pkt.txt;
+                packetEl.className = `flying-packet ${frame.pkt.type}`;
+                packetEl.style.opacity = '1';
+                packetEl.style.pointerEvents = 'auto';
+
+                const dashRect = document.getElementById('dashboard');
+                const rowLabel = document.getElementById(`label-${frame.pkt.loc}`);
+                const colHeader = document.getElementById(`hdr-rpc-${server}`);
+
+                const rowPos = getRelativePos(rowLabel, dashRect);
+                const colPos = getRelativePos(colHeader, dashRect);
+
+                const colCenterX = colPos.left + (colHeader.offsetWidth / 2);
+                const rowCenterY = rowPos.top + (rowLabel.offsetHeight / 2);
+
+                packetEl.style.top = `${rowCenterY}px`;
+                packetEl.style.left = `${colCenterX}px`; 
+            }
+        }
+
+        function resetOther(currentServer) {
+            ['S1', 'S2', 'S3'].forEach(other => {
+                if (other !== currentServer && (state[other].step !== 0 || state[other].playing)) {
+                    state[other].playing = false;
+                    state[other].step = 0;
+                    const btn = document.getElementById(`btn-play-${other}`);
+                    if (btn) {
+                        btn.innerHTML = "▶ Auto-Play";
+                        btn.classList.remove('danger'); 
+                        btn.classList.add('primary');
+                    }
+                    renderFollower(other);
+                }
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return; 
+            if (e.key === 'ArrowRight') { step(lastActiveServer, 1); e.preventDefault(); } 
+            else if (e.key === 'ArrowLeft') { step(lastActiveServer, -1); e.preventDefault(); }
+        });
+
+        document.getElementById('slider-speed').addEventListener('input', (e) => {
+            velocity = parseFloat(e.target.value);
+            document.getElementById('speed-val').innerText = velocity.toFixed(2) + 'x';
+            const duration = (0.5 / velocity).toFixed(2);
+            ['S1','S2','S3'].forEach(s => {
+                document.getElementById(`packet-${s}`).style.transitionDuration = `top ${duration}s, left ${duration}s, opacity 0.2s, background-color 0.2s, border-color 0.2s, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)`;
+            });
+        });
+
+        const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+        async function togglePlay(server) {
+            lastActiveServer = server; const btn = document.getElementById(`btn-play-${server}`);
+            if (state[server].playing) {
+                state[server].playing = false; btn.innerHTML = "▶ Auto-Play";
+                btn.classList.remove('danger'); btn.classList.add('primary');
+            } else {
+                resetOther(server);
+                if (state[server].step >= state[server].max) { state[server].step = 0; renderFollower(server); }
+                state[server].playing = true; btn.innerHTML = "⏸ Pause";
+                btn.classList.remove('primary'); btn.classList.add('danger');
+
+                while (state[server].playing && state[server].step < state[server].max) {
+                    await sleep(1500 / velocity);
+                    if (!state[server].playing) break; 
+                    state[server].step++; renderFollower(server);
+                }
+                state[server].playing = false; btn.innerHTML = "▶ Auto-Play";
+                btn.classList.remove('danger'); btn.classList.add('primary');
+            }
+        }
+
+        function step(server, direction) {
+            lastActiveServer = server; 
+            resetOther(server); 
+            if (state[server].playing) togglePlay(server); 
+            let newStep = state[server].step + direction;
+            if (newStep >= 0 && newStep <= state[server].max) {
+                state[server].step = newStep; renderFollower(server);
+            }
+        }
+
+        ['S1','S2','S3'].forEach(s => {
+            document.getElementById(`scrubber-${s}`).addEventListener('input', (e) => {
+                lastActiveServer = s; 
+                resetOther(s); 
+                if (state[s].playing) togglePlay(s);
+                state[s].step = parseInt(e.target.value); renderFollower(s);
+            });
+        });
+
+        function resetAll() {
+            ['S1','S2','S3'].forEach(s => {
+                state[s].playing = false; state[s].step = 0;
+                const btn = document.getElementById(`btn-play-${s}`);
+                if (btn) { btn.innerHTML = "▶ Auto-Play"; btn.classList.remove('danger'); btn.classList.add('primary'); }
+                renderFollower(s);
+            });
+        }
+
+        window.addEventListener('resize', () => { resetAll(); });
+        setTimeout(() => { resetAll(); }, 50);
+    </script>
+</body>
+</html>
