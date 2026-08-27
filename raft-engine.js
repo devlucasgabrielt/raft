@@ -7,54 +7,91 @@ let globalPausedServers = [];
 let lastActiveServer = 'S1'; 
 let isMaximized = false;
 
-// --- NUEVA LÓGICA FULLSCREEN ---
+function getRelativePos(el, parent) {
+    let top = 0, left = 0;
+    while (el && el !== parent) {
+        top += el.offsetTop;
+        left += el.offsetLeft;
+        el = el.offsetParent;
+    }
+    return { top, left };
+}
+
 function toggleMaximize() {
     if (!document.fullscreenElement) {
-        // Pedir pantalla completa al navegador
-        if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen();
-        } else if (document.documentElement.webkitRequestFullscreen) { /* Safari */
-            document.documentElement.webkitRequestFullscreen();
-        } else if (document.documentElement.msRequestFullscreen) { /* IE11 */
-            document.documentElement.msRequestFullscreen();
-        }
+        if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+        else if (document.documentElement.webkitRequestFullscreen) document.documentElement.webkitRequestFullscreen();
+        else if (document.documentElement.msRequestFullscreen) document.documentElement.msRequestFullscreen();
     } else {
-        // Salir de pantalla completa
-        if (document.exitFullscreen) {
-            document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) { /* Safari */
-            document.webkitExitFullscreen();
-        } else if (document.msExitFullscreen) { /* IE11 */
-            document.msExitFullscreen();
-        }
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.msExitFullscreen) document.msExitFullscreen();
     }
 }
 
-// Escuchar cambios de estado (Maneja el click en el botón Y la tecla ESC)
 document.addEventListener('fullscreenchange', () => {
     const wrapper = document.getElementById('raft-wrapper');
     const btn = document.getElementById('btn-maximize');
-    
     if (document.fullscreenElement) {
-        isMaximized = true;
-        wrapper.classList.add('maximized');
-        btn.innerHTML = "🔳 Minimizar";
-        document.body.style.overflow = "hidden";
+        isMaximized = true; wrapper.classList.add('maximized');
+        btn.innerHTML = "🔳 Minimizar"; document.body.style.overflow = "hidden";
     } else {
-        isMaximized = false;
-        wrapper.classList.remove('maximized');
-        btn.innerHTML = "🔲 Pantalla Completa";
-        document.body.style.overflow = "auto";
+        isMaximized = false; wrapper.classList.remove('maximized');
+        btn.innerHTML = "🔲 Pantalla Completa"; document.body.style.overflow = "auto";
     }
-    
-    // Recalcular posiciones de los paquetes tras el cambio de layout
     setTimeout(() => { renderFollower('S1'); renderFollower('S2'); }, 300);
 });
 
-// Safari vendor prefix support
-document.addEventListener('webkitfullscreenchange', () => {
-    document.dispatchEvent(new Event('fullscreenchange'));
-});
+document.addEventListener('webkitfullscreenchange', () => { document.dispatchEvent(new Event('fullscreenchange')); });
+
+function updateS3Highlights() {
+    const activeState = state[lastActiveServer];
+    const frame = activeState.data[activeState.step];
+    const prevTarget = frame.tp;
+    const entryTargets = frame.te || [];
+
+    for (let i = 10; i <= 13; i++) {
+        const s3Cell = document.getElementById(`c-S3-${i}`);
+        if (s3Cell) {
+            s3Cell.classList.remove('prev-index-marker');
+            if (prevTarget === i) s3Cell.classList.add('prev-index-marker');
+        }
+    }
+
+    let boundingBox = document.getElementById('entries-box-global');
+    if (!boundingBox) {
+        boundingBox = document.createElement('div');
+        boundingBox.id = 'entries-box-global';
+        boundingBox.className = 'entries-bounding-box';
+        document.getElementById('dashboard').appendChild(boundingBox);
+    }
+
+    if (entryTargets.length > 0) { 
+        const firstCell = document.getElementById(`c-S3-${entryTargets[0]}`);
+        const lastCell = document.getElementById(`c-S3-${entryTargets[entryTargets.length - 1]}`);
+        const dashRect = document.getElementById('dashboard');
+
+        if (firstCell && lastCell) {
+            const firstPos = getRelativePos(firstCell, dashRect);
+            const lastPos = getRelativePos(lastCell, dashRect);
+            const offset = 10; 
+
+            const left = firstPos.left - offset;
+            const top = firstPos.top - offset;
+            const width = (lastPos.left + lastCell.offsetWidth) - firstPos.left + (offset * 2);
+            const height = firstCell.offsetHeight + (offset * 2);
+
+            boundingBox.style.top = `${top}px`;
+            boundingBox.style.left = `${left}px`;
+            boundingBox.style.width = `${width}px`;
+            boundingBox.style.height = `${height}px`;
+            boundingBox.style.opacity = '1';
+            boundingBox.innerHTML = '<span class="entries-box-label">ENTRIES</span>';
+        }
+    } else {
+        boundingBox.style.opacity = '0';
+    }
+}
 
 function renderFollower(server) {
     const current = state[server];
@@ -67,35 +104,45 @@ function renderFollower(server) {
     document.getElementById(`btn-prev-${server}`).disabled = (current.step === 0);
     document.getElementById(`btn-next-${server}`).disabled = (current.step === current.max);
 
-    let prevTarget = frame.tp;
-    let entryTargets = frame.te || [];
-
     for (let i = 0; i < 4; i++) {
         const actualIdx = i + 10;
         const fCell = document.getElementById(`c-${server}-${actualIdx}`);
         fCell.className = 'cell'; 
         
-        // BUG FIX: Safely cast to String before calling .includes() to prevent Number type errors
         if (frame.l[i] !== undefined && String(frame.l[i]).includes('SNAPSHOT')) {
-            fCell.innerHTML = frame.l[i]; 
-            fCell.classList.add('snap-cell');
+            fCell.innerHTML = frame.l[i]; fCell.classList.add('snap-cell');
         } else if (frame.l[i] !== undefined) {
-            fCell.innerHTML = frame.l[i]; 
-            fCell.classList.add('has-data');
+            fCell.innerHTML = frame.l[i]; fCell.classList.add('has-data');
         } else {
-            fCell.innerHTML = '-'; 
-            fCell.classList.add('empty-cell');
+            fCell.innerHTML = '-'; fCell.classList.add('empty-cell');
         }
         
         if (frame.h === actualIdx) fCell.classList.add('highlight');
         if (frame.del === actualIdx) fCell.classList.add('vanish');
+    }
 
-        const s3Cell = document.getElementById(`c-S3-${actualIdx}`);
-        if(s3Cell) {
-            s3Cell.classList.remove('prev-index-marker', 'entry-marker');
-            if (prevTarget === actualIdx) s3Cell.classList.add('prev-index-marker');
-            else if (entryTargets.includes(actualIdx)) s3Cell.classList.add('entry-marker');
+    if (frame.l3) {
+        for (let i = 0; i < 4; i++) {
+            const actualIdx = i + 10;
+            const s3Cell = document.getElementById(`c-S3-${actualIdx}`);
+            if (s3Cell) {
+                s3Cell.className = 'cell'; 
+                if (frame.l3[i] !== undefined && String(frame.l3[i]).includes('SNAPSHOT')) {
+                    s3Cell.innerHTML = frame.l3[i]; s3Cell.classList.add('snap-cell');
+                } else if (frame.l3[i] !== undefined) {
+                    s3Cell.innerHTML = frame.l3[i]; s3Cell.classList.add('has-data');
+                } else {
+                    s3Cell.innerHTML = '-'; s3Cell.classList.add('empty-cell');
+                }
+                if (frame.h3 === actualIdx) s3Cell.classList.add('highlight');
+                if (frame.cInsert === actualIdx) s3Cell.classList.add('client-insert'); 
+            }
         }
+    }
+
+    if (server === lastActiveServer) {
+        updateS3Highlights();
+        document.getElementById('eval-S3').innerHTML = frame.e3 || "";
     }
 
     const packetEl = document.getElementById(`packet-${server}`);
@@ -108,22 +155,42 @@ function renderFollower(server) {
         packetEl.style.opacity = '1';
         packetEl.style.pointerEvents = 'auto';
 
-        const dashRect = document.getElementById('dashboard').getBoundingClientRect();
-        const rowLabelRect = document.getElementById(`label-${frame.pkt.loc}`).getBoundingClientRect();
-        const colRect = document.getElementById(`hdr-rpc-${server}`).getBoundingClientRect();
+        const dashRect = document.getElementById('dashboard');
+        const rowLabel = document.getElementById(`label-${frame.pkt.loc}`);
+        const colHeader = document.getElementById(`hdr-rpc-${server}`);
 
-        const colCenterX = colRect.left - dashRect.left + (colRect.width / 2);
-        const rowCenterY = rowLabelRect.top - dashRect.top + (rowLabelRect.height / 2);
+        const rowPos = getRelativePos(rowLabel, dashRect);
+        const colPos = getRelativePos(colHeader, dashRect);
+
+        const colCenterX = colPos.left + (colHeader.offsetWidth / 2);
+        const rowCenterY = rowPos.top + (rowLabel.offsetHeight / 2);
 
         packetEl.style.top = `${rowCenterY}px`;
         packetEl.style.left = `${colCenterX}px`; 
     }
 }
 
+// --- NUEVA LÓGICA: Exclusividad de la línea de tiempo ---
+function resetOther(currentServer) {
+    const other = currentServer === 'S1' ? 'S2' : 'S1';
+    // Si el otro servidor tiene algún progreso, reiniciarlo silenciosamente
+    if (state[other].step !== 0 || state[other].playing) {
+        state[other].playing = false;
+        state[other].step = 0;
+        
+        const btn = document.getElementById(`btn-play-${other}`);
+        if (btn) {
+            btn.innerHTML = "▶ Auto-Play Sync";
+            btn.classList.remove('danger'); 
+            btn.classList.add('primary');
+        }
+        renderFollower(other);
+    }
+}
+
 document.addEventListener('click', (e) => {
     if (e.target.closest('button, input, .play-controls, .velocity-bar, .flying-packet')) return;
-    const s1Playing = state['S1'].playing;
-    const s2Playing = state['S2'].playing;
+    const s1Playing = state['S1'].playing; const s2Playing = state['S2'].playing;
     
     if (s1Playing || s2Playing) {
         globalPausedServers = [];
@@ -136,9 +203,7 @@ document.addEventListener('click', (e) => {
                 if (state[s].step < state[s].max) { togglePlay(s); resumedAny = true; }
             });
         }
-        if (!resumedAny && state[lastActiveServer].step < state[lastActiveServer].max) {
-            togglePlay(lastActiveServer);
-        }
+        if (!resumedAny && state[lastActiveServer].step < state[lastActiveServer].max) togglePlay(lastActiveServer);
     }
 });
 
@@ -153,33 +218,30 @@ document.getElementById('slider-speed').addEventListener('input', (e) => {
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
 async function togglePlay(server) {
-    lastActiveServer = server;
-    const btn = document.getElementById(`btn-play-${server}`);
-    
+    lastActiveServer = server; const btn = document.getElementById(`btn-play-${server}`);
     if (state[server].playing) {
-        state[server].playing = false;
-        btn.innerHTML = "▶ Auto-Play Sync";
+        state[server].playing = false; btn.innerHTML = "▶ Auto-Play Sync";
         btn.classList.remove('danger'); btn.classList.add('primary');
     } else {
+        resetOther(server); // Resetear el otro antes de comenzar
         if (state[server].step >= state[server].max) { state[server].step = 0; renderFollower(server); }
-        state[server].playing = true;
-        btn.innerHTML = "⏸ Pausar Sync";
+        state[server].playing = true; btn.innerHTML = "⏸ Pause Sync";
         btn.classList.remove('primary'); btn.classList.add('danger');
 
         while (state[server].playing && state[server].step < state[server].max) {
             await sleep(1500 / velocity);
             if (!state[server].playing) break; 
-            state[server].step++;
-            renderFollower(server);
+            state[server].step++; renderFollower(server);
         }
-        state[server].playing = false;
-        btn.innerHTML = "▶ Auto-Play Sync";
+        state[server].playing = false; btn.innerHTML = "▶ Auto-Play Sync";
         btn.classList.remove('danger'); btn.classList.add('primary');
     }
 }
 
 function step(server, direction) {
-    lastActiveServer = server;
+    lastActiveServer = server; 
+    resetOther(server); // Resetear el otro antes de avanzar
+    
     if (state[server].playing) togglePlay(server); 
     let newStep = state[server].step + direction;
     if (newStep >= 0 && newStep <= state[server].max) {
@@ -188,12 +250,16 @@ function step(server, direction) {
 }
 
 document.getElementById('scrubber-S1').addEventListener('input', (e) => {
-    lastActiveServer = 'S1'; if (state['S1'].playing) togglePlay('S1');
+    lastActiveServer = 'S1'; 
+    resetOther('S1'); // Resetear el otro al mover la barra
+    if (state['S1'].playing) togglePlay('S1');
     state['S1'].step = parseInt(e.target.value); renderFollower('S1');
 });
 
 document.getElementById('scrubber-S2').addEventListener('input', (e) => {
-    lastActiveServer = 'S2'; if (state['S2'].playing) togglePlay('S2');
+    lastActiveServer = 'S2'; 
+    resetOther('S2'); // Resetear el otro al mover la barra
+    if (state['S2'].playing) togglePlay('S2');
     state['S2'].step = parseInt(e.target.value); renderFollower('S2');
 });
 
@@ -207,3 +273,15 @@ function resetBoth() {
 
 window.addEventListener('resize', () => { renderFollower('S1'); renderFollower('S2'); });
 setTimeout(() => { renderFollower('S1'); renderFollower('S2'); }, 50);
+
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return; 
+
+    if (e.key === 'ArrowRight') {
+        step(lastActiveServer, 1);
+        e.preventDefault(); // Evita scroll de la página
+    } else if (e.key === 'ArrowLeft') {
+        step(lastActiveServer, -1);
+        e.preventDefault(); // Evita scroll de la página
+    }
+});
