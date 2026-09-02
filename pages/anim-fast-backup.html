@@ -2,93 +2,226 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Raft Fast Backup - Los 3 Casos</title>
+    <title>Raft Fast Backup - Casos Dinámicos</title>
     <link rel="stylesheet" href="../styles/raft-theme.css">
     <style>
-        /* Ajuste específico para acomodar 3 paneles horizontalmente */
-        .timeline-controls { gap: 15px; margin-top: 40px; padding-bottom: 30px; }
-        .timeline-panel { padding: 15px 15px; min-width: 0; }
-        .timeline-header { font-size: 15px; margin-bottom: 10px; flex-direction: column; align-items: flex-start; gap: 8px; }
-        .step-desc { 
-            height: 45px; /* Fijado a 45px para que la caja no cambie de tamaño */
-            font-size: 13.5px; 
-            margin-bottom: 10px; 
-            align-items: flex-start; 
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--bg-color, #F8F9FA);
+            margin: 0;
+            padding: 20px;
         }
-        .play-controls { flex-wrap: wrap; justify-content: center; }
-        button { padding: 6px 10px; font-size: 13px; }
+
+        .raft-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 1250px;
+            margin: 0 auto;
+        }
+        .carousel-tabs { 
+            display: flex; gap: 10px; margin-bottom: 20px; 
+            border-bottom: 2px solid var(--border-light); padding-bottom: 15px;
+        }
+        .tab-btn { 
+            padding: 8px 16px; font-size: 14px; border: 2px solid var(--border-light); 
+            background: #FFF; border-radius: 6px; cursor: pointer; font-weight: bold; 
+            color: var(--text-main); transition: all 0.2s;
+        }
+        .tab-btn:hover { background: #E9ECEF; }
+        .tab-btn.active { border-color: var(--follower-border); background: #E8F0FE; color: var(--follower-border); }
+
+        .timeline-controls { display: flex; margin-top: 20px; width: 100%; flex-direction: column;}
+        .timeline-panel {
+            flex: 1; background: #FFFFFF; border: 2px solid #CED4DA; border-radius: 10px;
+            padding: 20px 25px; display: flex; flex-direction: column; transition: all 0.2s; cursor: pointer;
+        }
+        .timeline-panel.active-panel { border-color: #1A73E8; background: #F1F8FF; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.15); }
+        .timeline-header { font-size: 18px; font-weight: bold; color: var(--follower-border); margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .var-val { color: var(--text-main); background: #E9ECEF; padding: 4px 10px; border-radius: 4px; border: 1px solid #CED4DA; font-weight: 900; }
+        input[type="range"] { width: 100%; cursor: pointer; height: 8px; background: #DEE2E6; border-radius: 4px; outline: none; margin-bottom: 15px; }
+        .step-desc { height: 45px; font-size: 15.5px; font-weight: 600; color: #495057; margin-bottom: 10px; line-height: 1.4; display: flex; align-items: flex-start; }
+        
+        .play-controls { display: flex; gap: 8px; border-top: 1px solid #DEE2E6; padding-top: 15px; justify-content: center; }
+        button.action-btn { padding: 8px 16px; font-size: 15px; font-weight: bold; cursor: pointer; background: #FFF; border: 2px solid var(--border-heavy); border-radius: 6px; transition: all 0.2s; }
+        button.action-btn:hover:not(:disabled) { background: #E9ECEF; }
+        button.primary { background: var(--follower-border); color: #FFF; border-color: var(--follower-border); }
+        button.primary:hover:not(:disabled) { background: #174EA6; }
+        button.danger { background: #DC3545; color: #FFF; border-color: #DC3545; }
+        button.highlight-btn { background: #F9AB00; color: #000; border-color: #F9AB00; }
+        button.highlight-btn:hover { background: #E69B00; }
     </style>
 </head>
 <body>
     <div class="raft-wrapper" id="raft-wrapper">
         <div class="velocity-bar">
-            <span>Velocidad Auto Play:</span>
-            <input type="range" id="slider-speed" min="0.1" max="2" step="0.1" value="0.8" style="width: 200px; margin: 0;">
+            <span>Velocidad Global:</span>
+            <input type="range" id="slider-speed" min="0.1" max="2" step="0.1" value="0.8" style="width: 200px;">
             <span id="speed-val">0.80x</span>
-            <button onclick="toggleMaximize()" class="highlight-btn" style="margin-left: auto;" id="btn-maximize">🔲 Pantalla Completa</button>
-            <button onclick="resetAll()">🔄 Reset All States</button>
+            <button onclick="toggleMaximize()" class="action-btn highlight-btn" style="margin-left: auto;" id="btn-maximize">🔲 Pantalla Completa</button>
+            <button onclick="resetAll()" class="action-btn">🔄 Reiniciar Todo</button>
         </div>
 
-        <div class="dashboard" id="dashboard">
-            <table class="board">
+        <!-- =========================================================
+             CASO 1: XLEN (LOG DEMASIADO CORTO)
+             ========================================================= -->
+        <div class="case-container" id="case-c1">
+            <div class="case-title">Caso 1: Log del follower corto respecto al lider (Falla por XLen)</div>
+            <table class="board" id="board-c1">
                 <thead>
                     <tr>
-                        <th style="width: 70px;"></th>
-                        <th style="width: 75px;" class="idx-header">10</th><th style="width: 75px;" class="idx-header">11</th>
-                        <th style="width: 75px;" class="idx-header">12</th><th style="width: 75px;" class="idx-header">13</th>
-                        <th class="rpc-header" id="hdr-rpc-S3" style="width: 170px;">RPC L &lt;-&gt; S3<br><span style="font-size:12px; font-weight:normal;">(Case 3: Log Corto)</span></th>
-                        <th class="rpc-header" id="hdr-rpc-S2" style="width: 170px;">RPC L &lt;-&gt; S2<br><span style="font-size:12px; font-weight:normal;">(Case 2: Term Conflict) <br>-Lider SI tiene término-</span></th>
-                        <th class="rpc-header" id="hdr-rpc-S1" style="width: 170px;">RPC L &lt;-&gt; S1<br><span style="font-size:12px; font-weight:normal;">(Case 1: Term Conflict) <br>-Lider NO tiene término-</span></th>
+                        <th style="width: 90px;"></th>
+                        <th class="idx-header">10</th><th class="idx-header">11</th><th class="idx-header">12</th><th class="idx-header">13</th>
+                        <th class="rpc-header" id="hdr-c1">Tráfico de Red (RPC)</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td class="td-label first-row-padding"><div class="node-label follower-label" id="label-S1">S1</div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-10"></div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-11"></div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-12"></div></td><td class="td-cell first-row-padding"><div class="cell" id="c-S1-13"></div></td><td class="rpc-zone first-row-padding" rowspan="2"></td><td class="rpc-zone first-row-padding" rowspan="2"></td><td class="rpc-zone first-row-padding" rowspan="2"></td></tr>
-                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S1"></div></td></tr>
-                    
-                    <tr><td class="td-label"><div class="node-label follower-label" id="label-S2">S2</div></td><td class="td-cell"><div class="cell" id="c-S2-10"></div></td><td class="td-cell"><div class="cell" id="c-S2-11"></div></td><td class="td-cell"><div class="cell" id="c-S2-12"></div></td><td class="td-cell"><div class="cell" id="c-S2-13"></div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
-                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S2"></div></td></tr>
-
-                    <tr><td class="td-label"><div class="node-label follower-label" id="label-S3">S3</div></td><td class="td-cell"><div class="cell" id="c-S3-10"></div></td><td class="td-cell"><div class="cell" id="c-S3-11"></div></td><td class="td-cell"><div class="cell" id="c-S3-12"></div></td><td class="td-cell"><div class="cell" id="c-S3-13"></div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
-                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S3"></div></td></tr>
-                    
-                    <tr><td class="td-label"><div class="node-label leader-label" id="label-L">L*</div></td><td class="td-cell"><div class="cell has-data" id="c-L-10">4</div></td><td class="td-cell"><div class="cell has-data" id="c-L-11">6</div></td><td class="td-cell"><div class="cell has-data" id="c-L-12">6</div></td><td class="td-cell"><div class="cell empty-cell" id="c-L-13">-</div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
-                    <tr><td colspan="5" class="td-eval" style="border: none;"><div class="row-eval" id="eval-L"></div></td></tr>
+                    <tr>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c1-F">S1</div></td>
+                        <td class="td-cell"><div class="cell" id="c-c1-f-10"></div></td><td class="td-cell"><div class="cell" id="c-c1-f-11"></div></td><td class="td-cell"><div class="cell" id="c-c1-f-12"></div></td><td class="td-cell"><div class="cell" id="c-c1-f-13"></div></td>
+                        <td class="rpc-zone" rowspan="2"></td>
+                    </tr>
+                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-c1-f"></div></td></tr>
+                    <tr>
+                        <td class="td-label"><div class="node-label leader-label" id="label-c1-L">L*</div></td>
+                        <td class="td-cell"><div class="cell" id="c-c1-l-10"></div></td><td class="td-cell"><div class="cell" id="c-c1-l-11"></div></td><td class="td-cell"><div class="cell" id="c-c1-l-12"></div></td><td class="td-cell"><div class="cell" id="c-c1-l-13"></div></td>
+                    </tr>
+                    <tr><td colspan="5" class="td-eval" style="border: none;"><div class="row-eval" id="eval-c1-l"></div></td></tr>
                 </tbody>
             </table>
-            <div id="packet-S1" class="flying-packet"></div>
-            <div id="packet-S2" class="flying-packet"></div>
-            <div id="packet-S3" class="flying-packet"></div>
+            
+            <div id="pkt-c1" class="flying-packet"></div>
+            <div id="box-c1" class="entries-bounding-box"><span class="entries-box-label">ENTRIES</span></div>
+
+            <div class="timeline-controls">
+                <div class="timeline-panel active-panel" id="panel-c1" onclick="setActivePanel('c1')">
+                    <div class="timeline-header"><span>Progreso de Sincronización</span><span>nextIndex[S1] = <span class="var-val" id="ni-c1">13</span></span></div>
+                    <div class="step-desc" id="desc-c1"></div>
+                    <input type="range" id="scrub-c1" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c1" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c1')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c1', -1)">◀ Anterior</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c1', 1)">Siguiente ▶</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="timeline-controls">
-            <div class="timeline-panel">
-                <div class="timeline-header"><span>S1 - Caso 1 [4, 5, 5]</span><span>nextIndex = <span class="var-val" id="ni-S1">13</span></span></div>
-                <div class="step-desc" id="desc-S1"></div>
-                <input type="range" id="scrubber-S1" min="0" max="11" value="0">
-                <div class="play-controls"><button id="btn-play-S1" class="primary" onclick="togglePlay('S1')">▶ Auto-Play</button><button id="btn-prev-S1" onclick="step('S1', -1)">◀</button><button id="btn-next-S1" onclick="step('S1', 1)">▶</button></div>
+        <!-- =========================================================
+             CASO 2: LÍDER SÍ TIENE EL TÉRMINO (CON CAROUSEL)
+             ========================================================= -->
+        <div class="case-container" id="case-c2">
+            <div class="case-title">Caso 2: Conflicto de Término (Líder SÍ lo tiene)</div>
+            
+            <div class="carousel-tabs">
+                <button class="tab-btn active" id="tab-c2-A" onclick="switchExample('c2', 'A')">Ejemplo A: Líder [4, 6, 6]</button>
+                <button class="tab-btn" id="tab-c2-B" onclick="switchExample('c2', 'B')">Ejemplo B: Líder [4, 4, 6]</button>
             </div>
-            <div class="timeline-panel">
-                <div class="timeline-header"><span>S2 - Caso 2 [4, 4, 4]</span><span>nextIndex = <span class="var-val" id="ni-S2">13</span></span></div>
-                <div class="step-desc" id="desc-S2"></div>
-                <input type="range" id="scrubber-S2" min="0" max="11" value="0">
-                <div class="play-controls"><button id="btn-play-S2" class="primary" onclick="togglePlay('S2')">▶ Auto-Play</button><button id="btn-prev-S2" onclick="step('S2', -1)">◀</button><button id="btn-next-S2" onclick="step('S2', 1)">▶</button></div>
-            </div>
-            <div class="timeline-panel">
-                <div class="timeline-header"><span>S3 - Caso 3 [4]</span><span>nextIndex = <span class="var-val" id="ni-S3">13</span></span></div>
-                <div class="step-desc" id="desc-S3"></div>
-                <input type="range" id="scrubber-S3" min="0" max="11" value="0">
-                <div class="play-controls"><button id="btn-play-S3" class="primary" onclick="togglePlay('S3')">▶ Auto-Play</button><button id="btn-prev-S3" onclick="step('S3', -1)">◀</button><button id="btn-next-S3" onclick="step('S3', 1)">▶</button></div>
+
+            <table class="board" id="board-c2">
+                <thead>
+                    <tr>
+                        <th style="width: 90px;"></th>
+                        <th class="idx-header">10</th><th class="idx-header">11</th><th class="idx-header">12</th><th class="idx-header">13</th>
+                        <th class="rpc-header" id="hdr-c2">Tráfico de Red (RPC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c2-F">S2</div></td>
+                        <td class="td-cell"><div class="cell" id="c-c2-f-10"></div></td><td class="td-cell"><div class="cell" id="c-c2-f-11"></div></td><td class="td-cell"><div class="cell" id="c-c2-f-12"></div></td><td class="td-cell"><div class="cell" id="c-c2-f-13"></div></td>
+                        <td class="rpc-zone" rowspan="2"></td>
+                    </tr>
+                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-c2-f"></div></td></tr>
+                    <tr>
+                        <td class="td-label"><div class="node-label leader-label" id="label-c2-L">L*</div></td>
+                        <td class="td-cell"><div class="cell" id="c-c2-l-10"></div></td><td class="td-cell"><div class="cell" id="c-c2-l-11"></div></td><td class="td-cell"><div class="cell" id="c-c2-l-12"></div></td><td class="td-cell"><div class="cell" id="c-c2-l-13"></div></td>
+                    </tr>
+                    <tr><td colspan="5" class="td-eval" style="border: none;"><div class="row-eval" id="eval-c2-l"></div></td></tr>
+                </tbody>
+            </table>
+            
+            <div id="pkt-c2" class="flying-packet"></div>
+            <div id="box-c2" class="entries-bounding-box"><span class="entries-box-label">ENTRIES</span></div>
+
+            <div class="timeline-controls">
+                <div class="timeline-panel" id="panel-c2" onclick="setActivePanel('c2')">
+                    <div class="timeline-header"><span>Progreso de Sincronización</span><span>nextIndex[S2] = <span class="var-val" id="ni-c2">13</span></span></div>
+                    <div class="step-desc" id="desc-c2"></div>
+                    <input type="range" id="scrub-c2" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c2" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c2')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c2', -1)">◀ Anterior</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c2', 1)">Siguiente ▶</button>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <!-- =========================================================
+             CASO 3: LÍDER NO TIENE EL TÉRMINO (CON CAROUSEL)
+             ========================================================= -->
+        <div class="case-container" id="case-c3">
+            <div class="case-title">Caso 3: Conflicto de Término (Líder NO lo tiene)</div>
+
+            <div class="carousel-tabs">
+                <button class="tab-btn active" id="tab-c3-A" onclick="switchExample('c3', 'A')">Ejemplo A: Líder [4, 6, 6]</button>
+                <button class="tab-btn" id="tab-c3-B" onclick="switchExample('c3', 'B')">Ejemplo B: Líder [4, 4, 6]</button>
+            </div>
+
+            <table class="board" id="board-c3">
+                <thead>
+                    <tr>
+                        <th style="width: 90px;"></th>
+                        <th class="idx-header">10</th><th class="idx-header">11</th><th class="idx-header">12</th><th class="idx-header">13</th>
+                        <th class="rpc-header" id="hdr-c3">Tráfico de Red (RPC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c3-F">S3</div></td>
+                        <td class="td-cell"><div class="cell" id="c-c3-f-10"></div></td><td class="td-cell"><div class="cell" id="c-c3-f-11"></div></td><td class="td-cell"><div class="cell" id="c-c3-f-12"></div></td><td class="td-cell"><div class="cell" id="c-c3-f-13"></div></td>
+                        <td class="rpc-zone" rowspan="2"></td>
+                    </tr>
+                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-c3-f"></div></td></tr>
+                    <tr>
+                        <td class="td-label"><div class="node-label leader-label" id="label-c3-L">L*</div></td>
+                        <td class="td-cell"><div class="cell" id="c-c3-l-10"></div></td><td class="td-cell"><div class="cell" id="c-c3-l-11"></div></td><td class="td-cell"><div class="cell" id="c-c3-l-12"></div></td><td class="td-cell"><div class="cell" id="c-c3-l-13"></div></td>
+                    </tr>
+                    <tr><td colspan="5" class="td-eval" style="border: none;"><div class="row-eval" id="eval-c3-l"></div></td></tr>
+                </tbody>
+            </table>
+            
+            <div id="pkt-c3" class="flying-packet"></div>
+            <div id="box-c3" class="entries-bounding-box"><span class="entries-box-label">ENTRIES</span></div>
+
+            <div class="timeline-controls">
+                <div class="timeline-panel" id="panel-c3" onclick="setActivePanel('c3')">
+                    <div class="timeline-header"><span>Progreso de Sincronización</span><span>nextIndex[S3] = <span class="var-val" id="ni-c3">13</span></span></div>
+                    <div class="step-desc" id="desc-c3"></div>
+                    <input type="range" id="scrub-c3" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c3" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c3')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c3', -1)">◀ Anterior</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c3', 1)">Siguiente ▶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="slogan-footer">TA050 - Sistemas Distribuidos I - Cátedra Espina</div>
     </div>
-    
-    <script>
-        const rpcTitle = (title, color) => `<div style="border-bottom: 2px solid ${color}; margin-bottom: 8px; padding-bottom: 6px; font-size: 14px; font-weight: 900; text-transform: uppercase; text-align: center; color: ${color}; letter-spacing: 1px;">${title}</div>`;
 
-        const reqTxt = (idx, term, entries) => `${rpcTitle('AppendEntries', '#856404')}<span style="color:#856404">prevIdx = ${idx}<br>prevTerm = ${term}<br>entries = [${entries}]</span>`;
+    <!-- Scripts de Datos y Funcionalidad -->
+    <script>
+        const rpcTitle = (title, color) => `<div style="border-bottom: 2px solid ${color}; margin-bottom: 8px; padding-bottom: 6px; font-size: 15px; font-weight: 900; text-transform: uppercase; text-align: center; color: ${color}; letter-spacing: 1px;">${title}</div>`;
+        const reqTxt = (idx, term, entries) => `${rpcTitle('AppendEntries', '#856404')}<span style="color:#856404">prevLogIndex = ${idx}<br>prevLogTerm = ${term}<br>entries = [${entries}]</span>`;
         const accTxt = () => `${rpcTitle('Response', '#155724')}<span style="color:#155724">term = 6<br>success = true</span>`;
-        
         const fastRejTxt = (term, xterm, xindex, xlen) => {
             let txt = `${rpcTitle('Response', '#721C24')}<span style="color:#721C24; display:block; line-height:1.4;">term = ${term}<br>success = false`;
             if (xterm !== 'None') txt += `<br><b>XTerm</b> = ${xterm}`;
@@ -97,86 +230,307 @@
             return txt;
         };
         
-        const wait = `<span style="color:#6c757d">Evaluando AppendEntries...</span>`;
-        const tooShort = `<span style="color:#B31412">❌ Rechazado: Log es demasiado corto</span>`;
-        const mismatch = `<span style="color:#B31412">❌ Rechazado: Term no coincide!</span>`;
-        const match = `<span style="color:#0F5132">✅ Aceptado: match index y term!</span>`;
-        const synced = `<span style="color:#0F5132">✅ Los logs ahora están sincronizados</span>`;
+        const wait = `<span style="color:#6c757d">Evaluando Request...</span>`;
+        const mismatch = `<span style="color:#B31412">❌ Rechazado: Mismatch de Término!</span>`;
+        const match = `<span style="color:#0F5132">✅ Aceptado: Coincidencia confirmada!</span>`;
+        const synced = `<span style="color:#0F5132; font-weight:900;">✅ follower actualizado!</span>`;
 
-        // LÍNEA DE TIEMPO S1 (CASE 1)
-        const S1_TL = [
-            { d: "Estado Inicial. L asume liderazgo. S1 tiene un fork divergente [4, 5, 5].", lL: [4, 6, 6], l: [4, 5, 5], ni: 13, h: null, pkt: null },
-            { d: "Cliente envía comando. L lo anexa al index 13.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, cInsert: 13, eL: `<span class="client-msg">📥 Request del Cliente</span>`, pkt: null },
-            { d: "L envía entrada 13 validando contra prevLogIndex=12 y prevLogTerm=6.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
-            { d: "RPC viaja a S1. S1 busca el index 12.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: 12, e: wait, pkt: { loc: 'S1', type: 'request', txt: reqTxt(12, 6, '6') } },
-            { d: "S1 tiene Term 5 en index 12. ¡Mismatch con Term 6 del líder!", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: 12, e: mismatch, pkt: { loc: 'S1', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
-            { d: "S1 rechaza. FAST BACKUP: Retorna XTerm=5, XIndex=11 y XLen=13.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
-            { d: "L busca Term 5 en su log. ¡No lo tiene! Salta nextIndex al XIndex (11).", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
-            { d: "RPC viaja a S1 enviando [6, 6, 6] y validando prevLogIndex=10.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 11, h: 10, e: wait, pkt: { loc: 'S1', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "¡S1 TIENE index 10 con Term 4! MATCH exitoso.", lL: [4, 6, 6, 6], l: [4, 5, 5], ni: 11, h: 10, e: match, pkt: { loc: 'S1', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S1 borra entradas obsoletas y anexa [6, 6, 6].", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, e: "Sobrescribe entradas conflictivas.", pkt: { loc: 'S1', type: 'accept', txt: accTxt() } },
-            { d: "S1 devuelve success=true al líder.", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
-            { d: "L actualiza nextIndex a 14. ¡Sincronizado!", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 14, h: null, e: synced, pkt: null }
+        const l_A_init = [4, 6, 6, undefined]; 
+        const l_A_cmd  = [4, 6, 6, 6]; 
+        const l_B_init = [4, 4, 6, undefined];
+        const l_B_cmd  = [4, 4, 6, 6];
+
+        const c1_F_init = [4, undefined, undefined, undefined];
+        const C1_TL = [
+            { d: "Estado Inicial. S1 tiene un log más corto [4].", lL: l_A_init, l: c1_F_init, ni: 13, h: null, pkt: null },
+            { d: "Llega un comando de cliente. L anexa el Término 6 al index 13.", lL: l_A_cmd, l: c1_F_init, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S1 busca el index 12.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "El log de S1 termina en 10. No tiene index 12. Falla.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: 12, e: `<span style="color:#B31412">❌ Rechazado: Log muy corto!</span>`, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 'None', 'None', 11) } },
+            { d: "S1 rechaza. FAST BACKUP: Retorna la longitud total de su log (XLen=11).", lL: l_A_cmd, l: c1_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 'None', 'None', 11) } },
+            { d: "L recibe XLen=11. ¡Salta nextIndex directamente a 11!", lL: l_A_cmd, l: c1_F_init, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c1_F_init, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S1 TIENE index 10 con Term 4! MATCH exitoso.", lL: l_A_cmd, l: c1_F_init, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S1 anexa las nuevas entradas [6, 6, 6].", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
+            { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
 
-        // LÍNEA DE TIEMPO S2 (CASE 2)
-        const S2_TL = [
-            { d: "Estado Inicial. S2 tiene un fork con [4, 4, 4].", lL: [4, 6, 6], l: [4, 4, 4], ni: 13, h: null, pkt: null },
-            { d: "Cliente envía comando. L lo anexa al index 13.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, cInsert: 13, eL: `<span class="client-msg">📥 Request del Cliente</span>`, pkt: null },
-            { d: "L envía entrada 13 validando contra prevLogIndex=12 y prevLogTerm=6.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
-            { d: "RPC viaja a S2. S2 busca el index 12.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: 12, e: wait, pkt: { loc: 'S2', type: 'request', txt: reqTxt(12, 6, '6') } },
-            { d: "S2 tiene Term 4 en index 12. ¡Mismatch con Term 6 del líder!", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: 12, e: mismatch, pkt: { loc: 'S2', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
-            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4, XIndex=10 y XLen=13.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
-            { d: "L busca Term 4 en su log. ¡Lo tiene! Su último index de Term 4 es 10. Fija nextIndex=11.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
-            { d: "RPC viaja a S2 enviando [6, 6, 6] y validando prevLogIndex=10.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 11, h: 10, e: wait, pkt: { loc: 'S2', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "¡S2 TIENE index 10 con Term 4! MATCH exitoso.", lL: [4, 6, 6, 6], l: [4, 4, 4], ni: 11, h: 10, e: match, pkt: { loc: 'S2', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S2 borra entradas obsoletas y anexa [6, 6, 6].", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, e: "Sobrescribe entradas conflictivas.", pkt: { loc: 'S2', type: 'accept', txt: accTxt() } },
-            { d: "S2 devuelve success=true al líder.", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
-            { d: "L actualiza nextIndex a 14. ¡Sincronizado!", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 14, h: null, e: synced, pkt: null }
+        const c2_F_init = [4, 4, 4, undefined];
+        const C2_TL_A = [
+            { d: "Estado Inicial. S2 tiene bifurcación en el index 11.", lL: l_A_init, l: c2_F_init, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_A_cmd, l: c2_F_init, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S2 revisa su index 12.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S2 tiene Term 4, L envió Term 6.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4 y XIndex=10.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "L busca XTerm=4. ¡SÍ lo tiene! Su última aparición fue en index 10. Salta nextIndex=11.", lL: l_A_cmd, l: c2_F_init, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c2_F_init, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S2 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c2_F_init, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S2 detecta que sus index 11 y 12 chocan. ¡Borra lo divergente!", lL: l_A_cmd, l: c2_F_init, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S2 anexa [6, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
+            { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
 
-        // LÍNEA DE TIEMPO S3 (CASE 3)
-        const S3_TL = [
-            { d: "Estado Inicial. S3 tiene un log muy corto [4].", lL: [4, 6, 6], l: [4], ni: 13, h: null, pkt: null },
-            { d: "Cliente envía comando. L lo anexa al index 13.", lL: [4, 6, 6, 6], l: [4], ni: 13, cInsert: 13, eL: `<span class="client-msg">📥 Request del Cliente</span>`, pkt: null },
-            { d: "L envía entrada 13 validando contra prevLogIndex=12 y prevLogTerm=6.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
-            { d: "RPC viaja a S3. S3 busca el index 12.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: 12, e: wait, pkt: { loc: 'S3', type: 'request', txt: reqTxt(12, 6, '6') } },
-            { d: "El log de S3 termina en 10. No tiene index 12. Falla.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: 12, e: tooShort, pkt: { loc: 'S3', type: 'reject', txt: fastRejTxt(6, 'None', 'None', 11) } },
-            { d: "S3 rechaza. FAST BACKUP: Retorna la longitud total de su log XLen=11.", lL: [4, 6, 6, 6], l: [4], ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 'None', 'None', 11) } },
-            { d: "L recibe XLen=11. ¡Salta nextIndex directamente a 11!", lL: [4, 6, 6, 6], l: [4], ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
-            { d: "RPC viaja a S3 enviando [6, 6, 6] validando prevLogIndex=10.", lL: [4, 6, 6, 6], l: [4], ni: 11, h: 10, e: wait, pkt: { loc: 'S3', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "¡S3 TIENE index 10 con Term 4! MATCH exitoso.", lL: [4, 6, 6, 6], l: [4], ni: 11, h: 10, e: match, pkt: { loc: 'S3', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S3 anexa [6, 6, 6].", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, e: "S3 actualiza su log.", pkt: { loc: 'S3', type: 'accept', txt: accTxt() } },
-            { d: "S3 devuelve success=true al líder.", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 11, h: null, pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
-            { d: "L actualiza nextIndex a 14. ¡Sincronizado!", lL: [4, 6, 6, 6], l: [4, 6, 6, 6], ni: 14, h: null, e: synced, pkt: null }
+        const C2_TL_B = [
+            { d: "Estado Inicial. S2 tiene bifurcación en el index 12.", lL: l_B_init, l: c2_F_init, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_B_cmd, l: c2_F_init, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S2 revisa su index 12.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S2 tiene Term 4, L envió Term 6.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4 y XIndex=10.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "L busca XTerm=4. ¡SÍ lo tiene! Su última aparición fue en index 11. Salta nextIndex=12.", lL: l_B_cmd, l: c2_F_init, ni: 12, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(11, 4, '6, 6') }, tp: 11, te: [12, 13] },
+            { d: "L envía [6, 6] validando prevLogIndex=11.", lL: l_B_cmd, l: c2_F_init, ni: 12, h: 11, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "¡S2 revisa su index 11 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c2_F_init, ni: 12, h: 11, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "S2 detecta que su index 12 choca. ¡Borra lo divergente!", lL: l_B_cmd, l: c2_F_init, ni: 12, h: null, del: [12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "S2 anexa [6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 12, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: "", pkt: null },
+            { d: "¡Sincronización completa!", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
-        
+
+        // Datos para Caso 3 (Ejemplo A y Ejemplo B)
+        const c3_F_init_A = [4, 5, 5, undefined];
+        const C3_TL_A = [
+            { d: "Estado Inicial. S3 tiene Término 5 divergente.", lL: l_A_init, l: c3_F_init_A, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S3 revisa su index 12.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S3 tiene Term 5, L envió Term 6.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=11.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "L busca XTerm=5. ¡NO lo tiene! Usa directamente el XIndex como nextIndex=11.", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S3 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S3 detecta divergencia en 11 y 12. ¡Borra lo divergente!", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S3 anexa [6, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
+            { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
+        ];
+
+        const c3_F_init_B = [4, 4, 5, undefined];
+        const C3_TL_B = [
+            { d: "Estado Inicial. S3 tiene Término 5 divergente en el index 12.", lL: l_B_init, l: c3_F_init_B, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S3 revisa su index 12.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S3 tiene Term 5, L envió Term 6.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 5, 12, 13) } },
+            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=12.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 12, 13) } },
+            { d: "L busca XTerm=5. ¡NO lo tiene! Usa directamente el XIndex como nextIndex=12.", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(11, 4, '6, 6') }, tp: 11, te: [12, 13] },
+            { d: "L envía [6, 6] validando prevLogIndex=11.", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: 11, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "¡S3 revisa su index 11 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: 11, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "S3 detecta divergencia en 12. ¡Borra lo divergente!", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: null, del: [12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "S3 anexa [6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 12, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: "", pkt: null },
+            { d: "¡Sincronización completa!", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
+        ];
+
         let state = {
-            'S1': { step: 0, max: S1_TL.length - 1, data: S1_TL, playing: false },
-            'S2': { step: 0, max: S2_TL.length - 1, data: S2_TL, playing: false },
-            'S3': { step: 0, max: S3_TL.length - 1, data: S3_TL, playing: false }
+            'c1': { step: 0, max: C1_TL.length - 1, data: C1_TL, playing: false },
+            'c2': { step: 0, max: C2_TL_A.length - 1, data: C2_TL_A, playing: false, ex: 'A' },
+            'c3': { step: 0, max: C3_TL_A.length - 1, data: C3_TL_A, playing: false, ex: 'A' }
         };
         
         let velocity = 0.8; 
-        let globalPausedServers = [];
-        let lastActiveServer = 'S1'; 
-        let isMaximized = false;
+        let activePanelId = 'c1';
 
         function getRelativePos(el, parent) {
             let top = 0, left = 0;
-            while (el && el !== parent) {
-                top += el.offsetTop;
-                left += el.offsetLeft;
-                el = el.offsetParent;
-            }
+            while (el && el !== parent) { top += el.offsetTop; left += el.offsetLeft; el = el.offsetParent; }
             return { top, left };
         }
 
+        function setActivePanel(id) {
+            activePanelId = id;
+            document.querySelectorAll('.timeline-panel').forEach(p => p.classList.remove('active-panel'));
+            const p = document.getElementById(`panel-${id}`);
+            if(p) p.classList.add('active-panel');
+        }
+
+        function switchExample(cid, example) {
+            setActivePanel(cid);
+            state[cid].ex = example;
+            if (cid === 'c2') {
+                state[cid].data = (example === 'A') ? C2_TL_A : C2_TL_B;
+            } else if (cid === 'c3') {
+                state[cid].data = (example === 'A') ? C3_TL_A : C3_TL_B;
+            }
+            state[cid].max = state[cid].data.length - 1;
+            state[cid].step = 0;
+            document.getElementById(`scrub-${cid}`).max = state[cid].max;
+            
+            document.querySelectorAll(`#case-${cid} .tab-btn`).forEach(b => b.classList.remove('active'));
+            document.getElementById(`tab-${cid}-${example}`).classList.add('active');
+            
+            if(state[cid].playing) {
+                state[cid].playing = false;
+                document.getElementById(`btn-play-${cid}`).innerHTML = "▶ Auto-Play";
+            }
+            render(cid);
+        }
+
+        function render(cid) {
+            const cur = state[cid];
+            const frame = cur.data[cur.step];
+
+            document.getElementById(`desc-${cid}`).innerHTML = frame.d || "";
+            document.getElementById(`ni-${cid}`).innerText = frame.ni;
+            document.getElementById(`scrub-${cid}`).value = cur.step;
+            document.getElementById(`eval-${cid}-f`).innerHTML = frame.e || ""; 
+            document.getElementById(`eval-${cid}-l`).innerHTML = frame.eL || ""; 
+
+            for (let i = 0; i < 4; i++) {
+                let actual = i + 10;
+                let c = document.getElementById(`c-${cid}-f-${actual}`);
+                if (c) {
+                    c.className = 'cell';
+                    if (frame.l[i] !== undefined) {
+                        c.innerHTML = frame.l[i]; c.classList.add('has-data');
+                    } else {
+                        c.innerHTML = '-'; c.classList.add('empty-cell');
+                    }
+                    if (frame.h === actual) c.classList.add('highlight');
+                    if (frame.del && frame.del.includes(actual)) c.classList.add('vanish');
+                }
+            }
+
+            for (let i = 0; i < 4; i++) {
+                let actual = i + 10;
+                let cL = document.getElementById(`c-${cid}-l-${actual}`);
+                if (cL) {
+                    cL.className = 'cell';
+                    cL.classList.remove('prev-index-marker');
+                    if (frame.lL && frame.lL[i] !== undefined) {
+                        cL.innerHTML = frame.lL[i]; cL.classList.add('has-data');
+                    } else {
+                        cL.innerHTML = '-'; cL.classList.add('empty-cell');
+                    }
+                    if (frame.cInsert === actual) cL.classList.add('client-insert');
+                    if (frame.tp === actual) cL.classList.add('prev-index-marker');
+                }
+            }
+
+            const boundingBox = document.getElementById(`box-${cid}`);
+            const entryTargets = frame.te || [];
+            if (entryTargets.length > 0) {
+                const firstCell = document.getElementById(`c-${cid}-l-${entryTargets[0]}`);
+                const lastCell = document.getElementById(`c-${cid}-l-${entryTargets[entryTargets.length - 1]}`);
+                const parentContainer = document.getElementById(`case-${cid}`);
+
+                if (firstCell && lastCell && parentContainer) {
+                    const firstPos = getRelativePos(firstCell, parentContainer);
+                    const lastPos = getRelativePos(lastCell, parentContainer);
+                    const offset = 8; 
+
+                    boundingBox.style.top = `${firstPos.top - offset}px`;
+                    boundingBox.style.left = `${firstPos.left - offset}px`;
+                    boundingBox.style.width = `${(lastPos.left + lastCell.offsetWidth) - firstPos.left + (offset * 2)}px`;
+                    boundingBox.style.height = `${firstCell.offsetHeight + (offset * 2)}px`;
+                    boundingBox.style.opacity = '1';
+                }
+            } else {
+                if(boundingBox) boundingBox.style.opacity = '0';
+            }
+
+            const pkt = document.getElementById(`pkt-${cid}`);
+            if (!frame.pkt) {
+                pkt.style.opacity = '0';
+                pkt.style.pointerEvents = 'none';
+            } else {
+                pkt.innerHTML = frame.pkt.txt;
+                pkt.className = `flying-packet ${frame.pkt.type}`;
+                pkt.style.opacity = '1';
+                pkt.style.pointerEvents = 'auto';
+
+                const dashRect = document.getElementById(`case-${cid}`);
+                const rowLabel = document.getElementById(`label-${cid}-${frame.pkt.loc}`);
+                const colHeader = document.getElementById(`hdr-${cid}`);
+
+                if(rowLabel && colHeader && dashRect) {
+                    const rowPos = getRelativePos(rowLabel, dashRect);
+                    const colPos = getRelativePos(colHeader, dashRect);
+                    pkt.style.top = `${rowPos.top + (rowLabel.offsetHeight/2)}px`;
+                    pkt.style.left = `${colPos.left + (colHeader.offsetWidth/2)}px`;
+                }
+            }
+        }
+
+        const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+        async function togglePlay(cid) {
+            setActivePanel(cid);
+            const btn = document.getElementById(`btn-play-${cid}`);
+            if (state[cid].playing) {
+                state[cid].playing = false; btn.innerHTML = "▶ Auto-Play";
+                btn.classList.remove('danger'); btn.classList.add('primary');
+            } else {
+                if (state[cid].step >= state[cid].max) { state[cid].step = 0; render(cid); }
+                state[cid].playing = true; btn.innerHTML = "⏸ Pausar";
+                btn.classList.remove('primary'); btn.classList.add('danger');
+
+                while (state[cid].playing && state[cid].step < state[cid].max) {
+                    await sleep(1500 / velocity);
+                    if (!state[cid].playing) break; 
+                    state[cid].step++; render(cid);
+                }
+                state[cid].playing = false; btn.innerHTML = "▶ Auto-Play";
+                btn.classList.remove('danger'); btn.classList.add('primary');
+            }
+        }
+
+        function step(cid, direction) {
+            setActivePanel(cid);
+            if (state[cid].playing) togglePlay(cid); 
+            let newStep = state[cid].step + direction;
+            if (newStep >= 0 && newStep <= state[cid].max) {
+                state[cid].step = newStep; render(cid);
+            }
+        }
+
+        function resetAll() {
+            Object.keys(state).forEach(cid => {
+                state[cid].playing = false; state[cid].step = 0;
+                document.getElementById(`scrub-${cid}`).max = state[cid].max;
+                const btn = document.getElementById(`btn-play-${cid}`);
+                if (btn) { btn.innerHTML = "▶ Auto-Play"; btn.classList.remove('danger'); btn.classList.add('primary'); }
+                render(cid);
+            });
+            setActivePanel('c1');
+        }
+
+        Object.keys(state).forEach(cid => {
+            document.getElementById(`scrub-${cid}`).addEventListener('input', (e) => {
+                setActivePanel(cid);
+                if (state[cid].playing) togglePlay(cid);
+                state[cid].step = parseInt(e.target.value); render(cid);
+            });
+        });
+
+        document.getElementById('slider-speed').addEventListener('input', (e) => {
+            velocity = parseFloat(e.target.value);
+            document.getElementById('speed-val').innerText = velocity.toFixed(2) + 'x';
+            const duration = (0.5 / velocity).toFixed(2);
+            Object.keys(state).forEach(cid => {
+                document.getElementById(`pkt-${cid}`).style.transitionDuration = `top ${duration}s, left ${duration}s, opacity 0.2s, background-color 0.2s, border-color 0.2s, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)`;
+            });
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return; 
+            if (e.key === 'ArrowRight') { step(activePanelId, 1); e.preventDefault(); } 
+            else if (e.key === 'ArrowLeft') { step(activePanelId, -1); e.preventDefault(); }
+        });
+
         function toggleMaximize() {
+            const wrapper = document.getElementById('raft-wrapper');
+            const btn = document.getElementById('btn-maximize');
             if (!document.fullscreenElement) {
                 if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+                else if (document.documentElement.webkitRequestFullscreen) document.documentElement.webkitRequestFullscreen();
+                else if (document.documentElement.msRequestFullscreen) document.documentElement.msRequestFullscreen();
             } else {
                 if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                else if (document.msExitFullscreen) document.msExitFullscreen();
             }
         }
 
@@ -184,220 +538,17 @@
             const wrapper = document.getElementById('raft-wrapper');
             const btn = document.getElementById('btn-maximize');
             if (document.fullscreenElement) {
-                isMaximized = true; wrapper.classList.add('maximized');
-                btn.innerHTML = "🔳 Minimizar"; document.body.style.overflow = "hidden";
+                wrapper.classList.add('maximized');
+                btn.innerHTML = "🔳 Minimizar"; 
+                document.body.style.overflow = "hidden";
             } else {
-                isMaximized = false; wrapper.classList.remove('maximized');
-                btn.innerHTML = "🔲 Pantalla Completa"; document.body.style.overflow = "auto";
+                wrapper.classList.remove('maximized');
+                btn.innerHTML = "🔲 Pantalla Completa"; 
+                document.body.style.overflow = "auto";
             }
-            setTimeout(() => { renderFollower('S1'); renderFollower('S2'); renderFollower('S3'); }, 300);
         });
 
-        function updateLeaderHighlights() {
-            const activeState = state[lastActiveServer];
-            const frame = activeState.data[activeState.step];
-            const prevTarget = frame.tp;
-            const entryTargets = frame.te || [];
-
-            for (let i = 10; i <= 13; i++) {
-                const lCell = document.getElementById(`c-L-${i}`);
-                if (lCell) {
-                    lCell.classList.remove('prev-index-marker');
-                    if (prevTarget === i) lCell.classList.add('prev-index-marker');
-                }
-            }
-
-            let boundingBox = document.getElementById('entries-box-global');
-            if (!boundingBox) {
-                boundingBox = document.createElement('div');
-                boundingBox.id = 'entries-box-global';
-                boundingBox.className = 'entries-bounding-box';
-                document.getElementById('dashboard').appendChild(boundingBox);
-            }
-
-            if (entryTargets.length > 0) { 
-                const firstCell = document.getElementById(`c-L-${entryTargets[0]}`);
-                const lastCell = document.getElementById(`c-L-${entryTargets[entryTargets.length - 1]}`);
-                const dashRect = document.getElementById('dashboard');
-
-                if (firstCell && lastCell) {
-                    const firstPos = getRelativePos(firstCell, dashRect);
-                    const lastPos = getRelativePos(lastCell, dashRect);
-                    const offset = 10; 
-
-                    const left = firstPos.left - offset;
-                    const top = firstPos.top - offset;
-                    const width = (lastPos.left + lastCell.offsetWidth) - firstPos.left + (offset * 2);
-                    const height = firstCell.offsetHeight + (offset * 2);
-
-                    boundingBox.style.top = `${top}px`;
-                    boundingBox.style.left = `${left}px`;
-                    boundingBox.style.width = `${width}px`;
-                    boundingBox.style.height = `${height}px`;
-                    boundingBox.style.opacity = '1';
-                    boundingBox.innerHTML = '<span class="entries-box-label">ENTRIES</span>';
-                }
-            } else {
-                boundingBox.style.opacity = '0';
-            }
-        }
-
-        function renderFollower(server) {
-            const current = state[server];
-            const frame = current.data[current.step];
-            
-            document.getElementById(`desc-${server}`).innerHTML = frame.d || "";
-            document.getElementById(`ni-${server}`).innerText = frame.ni;
-            document.getElementById(`scrubber-${server}`).value = current.step;
-            document.getElementById(`eval-${server}`).innerHTML = frame.e || ""; 
-            document.getElementById(`btn-prev-${server}`).disabled = (current.step === 0);
-            document.getElementById(`btn-next-${server}`).disabled = (current.step === current.max);
-
-            for (let i = 0; i < 4; i++) {
-                const actualIdx = i + 10;
-                const fCell = document.getElementById(`c-${server}-${actualIdx}`);
-                if (fCell) {
-                    fCell.className = 'cell'; 
-                    if (frame.l[i] !== undefined) {
-                        fCell.innerHTML = frame.l[i]; fCell.classList.add('has-data');
-                    } else {
-                        fCell.innerHTML = '-'; fCell.classList.add('empty-cell');
-                    }
-                    if (frame.h === actualIdx) fCell.classList.add('highlight');
-                    if (frame.del === actualIdx) fCell.classList.add('vanish');
-                }
-            }
-
-            if (frame.lL) {
-                for (let i = 0; i < 4; i++) {
-                    const actualIdx = i + 10;
-                    const lCell = document.getElementById(`c-L-${actualIdx}`);
-                    if (lCell) {
-                        lCell.className = 'cell'; 
-                        if (frame.lL[i] !== undefined) {
-                            lCell.innerHTML = frame.lL[i]; lCell.classList.add('has-data');
-                        } else {
-                            lCell.innerHTML = '-'; lCell.classList.add('empty-cell');
-                        }
-                        if (frame.cInsert === actualIdx) lCell.classList.add('client-insert'); 
-                    }
-                }
-            }
-
-            if (server === lastActiveServer) {
-                updateLeaderHighlights();
-                document.getElementById('eval-L').innerHTML = frame.eL || "";
-            }
-
-            const packetEl = document.getElementById(`packet-${server}`);
-            if (!frame.pkt) {
-                packetEl.style.opacity = '0';
-                packetEl.style.pointerEvents = 'none';
-            } else {
-                packetEl.innerHTML = frame.pkt.txt;
-                packetEl.className = `flying-packet ${frame.pkt.type}`;
-                packetEl.style.opacity = '1';
-                packetEl.style.pointerEvents = 'auto';
-
-                const dashRect = document.getElementById('dashboard');
-                const rowLabel = document.getElementById(`label-${frame.pkt.loc}`);
-                const colHeader = document.getElementById(`hdr-rpc-${server}`);
-
-                const rowPos = getRelativePos(rowLabel, dashRect);
-                const colPos = getRelativePos(colHeader, dashRect);
-
-                const colCenterX = colPos.left + (colHeader.offsetWidth / 2);
-                const rowCenterY = rowPos.top + (rowLabel.offsetHeight / 2);
-
-                packetEl.style.top = `${rowCenterY}px`;
-                packetEl.style.left = `${colCenterX}px`; 
-            }
-        }
-
-        function resetOther(currentServer) {
-            ['S1', 'S2', 'S3'].forEach(other => {
-                if (other !== currentServer && (state[other].step !== 0 || state[other].playing)) {
-                    state[other].playing = false;
-                    state[other].step = 0;
-                    const btn = document.getElementById(`btn-play-${other}`);
-                    if (btn) {
-                        btn.innerHTML = "▶ Auto-Play";
-                        btn.classList.remove('danger'); 
-                        btn.classList.add('primary');
-                    }
-                    renderFollower(other);
-                }
-            });
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (e.target.tagName === 'INPUT') return; 
-            if (e.key === 'ArrowRight') { step(lastActiveServer, 1); e.preventDefault(); } 
-            else if (e.key === 'ArrowLeft') { step(lastActiveServer, -1); e.preventDefault(); }
-        });
-
-        document.getElementById('slider-speed').addEventListener('input', (e) => {
-            velocity = parseFloat(e.target.value);
-            document.getElementById('speed-val').innerText = velocity.toFixed(2) + 'x';
-            const duration = (0.5 / velocity).toFixed(2);
-            ['S1','S2','S3'].forEach(s => {
-                document.getElementById(`packet-${s}`).style.transitionDuration = `top ${duration}s, left ${duration}s, opacity 0.2s, background-color 0.2s, border-color 0.2s, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)`;
-            });
-        });
-
-        const sleep = ms => new Promise(res => setTimeout(res, ms));
-
-        async function togglePlay(server) {
-            lastActiveServer = server; const btn = document.getElementById(`btn-play-${server}`);
-            if (state[server].playing) {
-                state[server].playing = false; btn.innerHTML = "▶ Auto-Play";
-                btn.classList.remove('danger'); btn.classList.add('primary');
-            } else {
-                resetOther(server);
-                if (state[server].step >= state[server].max) { state[server].step = 0; renderFollower(server); }
-                state[server].playing = true; btn.innerHTML = "⏸ Pause";
-                btn.classList.remove('primary'); btn.classList.add('danger');
-
-                while (state[server].playing && state[server].step < state[server].max) {
-                    await sleep(1500 / velocity);
-                    if (!state[server].playing) break; 
-                    state[server].step++; renderFollower(server);
-                }
-                state[server].playing = false; btn.innerHTML = "▶ Auto-Play";
-                btn.classList.remove('danger'); btn.classList.add('primary');
-            }
-        }
-
-        function step(server, direction) {
-            lastActiveServer = server; 
-            resetOther(server); 
-            if (state[server].playing) togglePlay(server); 
-            let newStep = state[server].step + direction;
-            if (newStep >= 0 && newStep <= state[server].max) {
-                state[server].step = newStep; renderFollower(server);
-            }
-        }
-
-        ['S1','S2','S3'].forEach(s => {
-            document.getElementById(`scrubber-${s}`).addEventListener('input', (e) => {
-                lastActiveServer = s; 
-                resetOther(s); 
-                if (state[s].playing) togglePlay(s);
-                state[s].step = parseInt(e.target.value); renderFollower(s);
-            });
-        });
-
-        function resetAll() {
-            ['S1','S2','S3'].forEach(s => {
-                state[s].playing = false; state[s].step = 0;
-                const btn = document.getElementById(`btn-play-${s}`);
-                if (btn) { btn.innerHTML = "▶ Auto-Play"; btn.classList.remove('danger'); btn.classList.add('primary'); }
-                renderFollower(s);
-            });
-        }
-
-        window.addEventListener('resize', () => { resetAll(); });
-        setTimeout(() => { resetAll(); }, 50);
+        window.onload = () => { resetAll(); };
     </script>
 </body>
 </html>
