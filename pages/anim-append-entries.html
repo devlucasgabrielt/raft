@@ -1,65 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Raft AppendEntries</title>
     <link rel="stylesheet" href="../styles/raft-theme.css">
-    <style>
-        /* ==================================================================
-           ESTILOS ESPECÍFICOS DE LA PÁGINA (CONTROLES Y PANELES)
-           ================================================================== */
-        .timeline-controls { 
-            display: flex; gap: 20px; margin-top: 40px; padding-bottom: 50px; width: 100%; 
-        }
-        
-        .timeline-panel {
-            flex: 1; background: #FFFFFF; border: 2px solid #CED4DA; border-radius: 10px;
-            padding: 20px 25px; display: flex; flex-direction: column; transition: all 0.2s;
-        }
-
-        .timeline-header { 
-            font-size: 18px; font-weight: bold; color: var(--follower-border); 
-            margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; 
-        }
-
-        .var-val { 
-            color: var(--text-main); background: #E9ECEF; padding: 4px 10px; 
-            border-radius: 4px; border: 1px solid #CED4DA; font-weight: 900; 
-        }
-
-        input[type="range"] { 
-            width: 100%; cursor: pointer; height: 8px; background: #DEE2E6; 
-            border-radius: 4px; outline: none; margin-bottom: 15px; 
-        }
-
-        .step-desc { 
-            height: 45px; font-size: 15.5px; font-weight: 600; color: #495057; 
-            margin-bottom: 10px; line-height: 1.4; display: flex; align-items: flex-start; 
-        }
-        
-        .play-controls { 
-            display: flex; gap: 10px; border-top: 1px solid #DEE2E6; 
-            padding-top: 15px; justify-content: flex-start; 
-        }
-
-        button { 
-            padding: 8px 16px; font-size: 15px; font-weight: bold; cursor: pointer; 
-            background: #FFF; color: var(--text-main); border: 2px solid var(--border-heavy); 
-            border-radius: 6px; transition: all 0.2s; 
-        }
-
-        button:hover:not(:disabled) { background: #E9ECEF; }
-        
-        button.primary { background: var(--follower-border); color: #FFF; border-color: var(--follower-border); }
-        button.primary:hover:not(:disabled) { background: #174EA6; }
-        
-        button.danger { background: #DC3545; color: #FFF; border-color: #DC3545; }
-        
-        button.highlight-btn { background: #F9AB00; color: #000; border-color: #F9AB00; }
-        button.highlight-btn:hover { background: #E69B00; }
-        
-        button:disabled { background: #E9ECEF !important; color: #ADB5BD !important; cursor: not-allowed; border-color: #DEE2E6 !important; }
-    </style>
 </head>
 <body>
     <div class="raft-wrapper" id="raft-wrapper">
@@ -94,27 +38,18 @@
             <div id="packet-S1" class="flying-packet"></div>
             <div id="packet-S2" class="flying-packet"></div>
         </div>
-        
         <div class="timeline-controls">
-            <div class="timeline-panel" id="panel-S1">
+            <div class="timeline-panel">
                 <div class="timeline-header"><span>Sincronización de S1</span><span>nextIndex[S1] = <span class="var-val" id="ni-S1">13</span></span></div>
                 <div class="step-desc" id="desc-S1"></div>
                 <input type="range" id="scrubber-S1" min="0" max="15" value="0">
-                <div class="play-controls">
-                    <button id="btn-play-S1" class="primary" onclick="togglePlay('S1')">▶ Auto-Play Sync</button>
-                    <button id="btn-prev-S1" onclick="step('S1', -1)">◀ Prev</button>
-                    <button id="btn-next-S1" onclick="step('S1', 1)">Next ▶</button>
-                </div>
+                <div class="play-controls"><button id="btn-play-S1" class="primary" onclick="togglePlay('S1')">▶ Auto-Play Sync</button><button id="btn-prev-S1" onclick="step('S1', -1)">◀ Prev</button><button id="btn-next-S1" onclick="step('S1', 1)">Next ▶</button></div>
             </div>
-            <div class="timeline-panel" id="panel-S2">
+            <div class="timeline-panel">
                 <div class="timeline-header"><span>Sincronización de S2</span><span>nextIndex[S2] = <span class="var-val" id="ni-S2">13</span></span></div>
                 <div class="step-desc" id="desc-S2"></div>
                 <input type="range" id="scrubber-S2" min="0" max="12" value="0">
-                <div class="play-controls">
-                    <button id="btn-play-S2" class="primary" onclick="togglePlay('S2')">▶ Auto-Play Sync</button>
-                    <button id="btn-prev-S2" onclick="step('S2', -1)">◀ Prev</button>
-                    <button id="btn-next-S2" onclick="step('S2', 1)">Next ▶</button>
-                </div>
+                <div class="play-controls"><button id="btn-play-S2" class="primary" onclick="togglePlay('S2')">▶ Auto-Play Sync</button><button id="btn-prev-S2" onclick="step('S2', -1)">◀ Prev</button><button id="btn-next-S2" onclick="step('S2', 1)">Next ▶</button></div>
             </div>
         </div>
         <div class="slogan-footer">TA050 - Sistemas Distribuidos I - Cátedra Espina</div>
