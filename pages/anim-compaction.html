@@ -1,142 +1,739 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Raft Compaction & InstallSnapshot</title>
+    <title>Raft - Fast Backup vs Compaction</title>
     <link rel="stylesheet" href="../styles/raft-theme.css">
+    <style>
+        .timeline-controls { display: flex; gap: 20px; margin-top: 60px; width: 100%; padding-bottom: 50px; }
+        .timeline-panel {
+            flex: 1; background: #FFFFFF; border: 2px solid #CED4DA; border-radius: 10px;
+            padding: 20px 25px; display: flex; flex-direction: column; cursor: pointer; transition: all 0.2s;
+        }
+        .timeline-panel.active-panel { border-color: #1A73E8; background: #F1F8FF; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.15); }
+
+        .timeline-header { font-size: 18px; font-weight: bold; color: var(--follower-border); margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .var-val { color: var(--text-main); background: #E9ECEF; padding: 4px 10px; border-radius: 4px; border: 1px solid #CED4DA; font-weight: 900; }
+        input[type="range"] { width: 100%; cursor: pointer; height: 8px; background: #DEE2E6; border-radius: 4px; outline: none; margin-bottom: 15px; }
+        .step-desc { font-size: 15px; font-weight: 600; color: #495057; height: 45px; min-height: 22px; margin-bottom: 15px; line-height: 1.4; display: flex; align-items: flex-start; }
+        .play-controls { display: flex; gap: 10px; border-top: 1px solid #DEE2E6; padding-top: 15px; }
+        
+        button.action-btn { padding: 8px 16px; font-size: 15px; font-weight: bold; cursor: pointer; background: #FFF; color: var(--text-main); border: 2px solid var(--border-heavy); border-radius: 6px; transition: all 0.2s; }
+        button.action-btn:hover:not(:disabled) { background: #E9ECEF; }
+        button.primary { background: var(--follower-border); color: #FFF; border-color: var(--follower-border); }
+        button.primary:hover:not(:disabled) { background: #174EA6; }
+        
+        .case-container {
+            position: relative; width: 100%; max-width: 1250px; background: #FFFFFF; 
+            border: 2px solid #CED4DA; border-radius: 12px; padding: 30px 40px; margin-bottom: 40px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); box-sizing: border-box;
+        }
+
+        .velocity-bar { background: #FFF; border: 2px solid #CED4DA; padding: 15px 30px; border-radius: 8px; display: flex; gap: 15px; align-items: center; font-weight: bold; font-size: 16px; margin-bottom: 30px; width: 100%; box-sizing: border-box; max-width: 1250px; }
+
+        /* Ajustes base de tablas y anchos proporcionales */
+        table.board { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 10px; }
+        th, td { box-sizing: border-box; padding: 0; margin: 0; vertical-align: middle; }
+        
+        .board th, .board td {
+            transition: width 0.7s cubic-bezier(0.25, 0.8, 0.25, 1), padding 0.7s ease, opacity 0.5s ease;
+        }
+
+        .collapsed-col {
+            width: 0 !important;
+            padding: 0 !important;
+            opacity: 0 !important;
+            border: none !important;
+            overflow: hidden;
+        }
+        .collapsed-col .cell { display: none !important; }
+
+        .td-eval { padding: 5px 0 15px 5px; border-bottom: 2px solid #F1F3F4; }
+        .row-eval { height: 30px; font-size: 16px; font-weight: bold; display: flex; align-items: center; white-space: nowrap; }
+        
+        .snap-cell {
+            background-color: #E8EAF6 !important; color: #1A237E !important; border: 2px dashed #9FA8DA !important;
+            flex-direction: column; line-height: 1.1; font-family: monospace; position: relative; cursor: zoom-in;
+        }
+        .snap-cell b { font-size: 16px; letter-spacing: 0.5px; margin-bottom: 2px; }
+        .snap-cell span { font-size: 14px; font-weight: normal; }
+        
+        .snap-detail {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.5); opacity: 0;
+            background: #B3E5FC; border: 3px solid #000; color: #000; padding: 15px 20px; width: 220px; border-radius: 0px;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); font-size: 18px; font-family: -apple-system, sans-serif;
+            font-weight: normal; text-align: left; pointer-events: none; box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4); z-index: 1000;
+        }
+        .snap-cell:hover .snap-detail { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+
+        .flying-packet.snapshot { width: 230px; font-size: 13.5px; padding: 12px; background: #E8EAF6; color: #1A237E; border: 2px solid #9FA8DA; }
+
+        .hidden-cell { opacity: 0 !important; pointer-events: none !important; border-color: transparent !important; background: transparent !important; }
+
+        .snap-cell.prev-index-marker {
+            border: 2px solid #FF8F00 !important;
+            background: rgba(255, 143, 0, 0.2) !important;
+            box-shadow: 0 0 0 2px #FF8F00;
+        }
+        @keyframes fadeInsert { 0% { opacity: 0; transform: scale(0.3); background-color: #FFD54F; } 50% { opacity: 1; transform: scale(1.15); background-color: #FFE082; box-shadow: 0 0 20px rgba(255, 152, 0, 0.6); } 100% { opacity: 1; transform: scale(1); background-color: #E9ECEF; } }
+        .client-insert { animation: fadeInsert 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; border: 4px solid #FF9800 !important; position: relative; z-index: 10; }
+    </style>
 </head>
 <body>
     <div class="raft-wrapper" id="raft-wrapper">
         <div class="velocity-bar">
-            <span>Global Auto-Play Velocity:</span>
-            <input type="range" id="slider-speed" min="0.1" max="2" step="0.1" value="0.8" style="width: 200px; margin: 0;">
+            <span>Velocidad Global:</span>
+            <input type="range" id="slider-speed" min="0.1" max="2" step="0.1" value="0.8" style="width: 200px;">
             <span id="speed-val">0.80x</span>
-            <button onclick="toggleMaximize()" class="highlight-btn" style="margin-left: auto;" id="btn-maximize">🔲 Pantalla Completa</button>
-            <button onclick="resetBoth()">🔄 Reset All States</button>
+            <button onclick="toggleMaximize()" class="action-btn highlight-btn" style="margin-left: auto;" id="btn-maximize">🔲 Pantalla Completa</button>
+            <button onclick="resetAll()" class="action-btn">🔄 Reset Todo</button>
         </div>
 
-        <div class="dashboard" id="dashboard">
-            <table class="board">
+        <!-- CASO 1: SEGUIDOR DESACTUALIZADO -->
+        <div class="case-container" id="case1">
+            <div class="case-title">Caso 1: Seguidor Desactualizado (Falla por XLen y Libera Memoria)</div>
+            <table class="board" id="board-c1">
                 <thead>
                     <tr>
-                        <th style="width: 90px;"></th>
-                        <th style="width: 85px;" class="idx-header">10</th><th style="width: 85px;" class="idx-header">11</th>
-                        <th style="width: 85px;" class="idx-header">12</th><th style="width: 85px;" class="idx-header">13</th>
-                        <th class="rpc-header" id="hdr-rpc-S2">RPC S3 &lt;-&gt; S2</th>
-                        <th class="rpc-header" id="hdr-rpc-S1">RPC S3 &lt;-&gt; S1</th>
+                        <th style="width: 9%;"></th>
+                        <th class="idx-header" id="th-c1-8" style="width: 8%;">8</th>
+                        <th class="idx-header" id="th-c1-9" style="width: 8%;">9</th>
+                        <th class="idx-header" style="width: 8%;">10</th>
+                        <th class="idx-header" style="width: 8%;">11</th>
+                        <th class="idx-header" style="width: 8%;">12</th>
+                        <th class="idx-header" style="width: 8%;">13</th>
+                        <th class="rpc-header" id="hdr-c1-sin" style="width: 21.5%;">Sin Fast Backup (O(N))</th>
+                        <th class="rpc-header" id="hdr-c1-con" style="width: 21.5%;">Con Fast Backup (O(1))</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <!-- S1 ROW: Has the new padding class to push it safely below the header -->
                     <tr>
-                        <td class="td-label first-row-padding"><div class="node-label follower-label" id="label-S1">S1</div></td>
-                        <td class="td-cell first-row-padding"><div class="cell" id="c-S1-10"></div></td>
-                        <td class="td-cell first-row-padding"><div class="cell" id="c-S1-11"></div></td>
-                        <td class="td-cell first-row-padding"><div class="cell" id="c-S1-12"></div></td>
-                        <td class="td-cell first-row-padding"><div class="cell" id="c-S1-13"></div></td>
-                        <td class="rpc-zone first-row-padding" rowspan="2"></td>
-                        <td class="rpc-zone first-row-padding" rowspan="2"></td>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c1-f">F</div></td>
+                        <td class="td-cell" id="td-c1-f-8"><div class="cell" id="c1-f-8"></div></td>
+                        <td class="td-cell" id="td-c1-f-9"><div class="cell" id="c1-f-9"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-f-10"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-f-11"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-f-12"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-f-13"></div></td>
+                        <td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td>
                     </tr>
-                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S1"></div></td></tr>
-                    
-                    <tr><td class="td-label"><div class="node-label follower-label" id="label-S2">S2</div></td><td class="td-cell"><div class="cell" id="c-S2-10"></div></td><td class="td-cell"><div class="cell" id="c-S2-11"></div></td><td class="td-cell"><div class="cell" id="c-S2-12"></div></td><td class="td-cell"><div class="cell" id="c-S2-13"></div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
-                    <tr><td colspan="5" class="td-eval"><div class="row-eval" id="eval-S2"></div></td></tr>
-                    
-                    <tr><td class="td-label"><div class="node-label leader-label" id="label-S3">S3*</div></td><td class="td-cell"><div class="cell snap-cell" id="c-S3-10"><span style="font-size: 15.2px; line-height: 1.2;"><b>SNAPSHOT</b></span><div class="snap-detail"><div class="snap-title">snapshot</div>last included index: 10<br>last included term: 3<br>state machine state:<br>&nbsp;&nbsp;x &larr; 42<br>&nbsp;&nbsp;y &larr; 9</div></div></td><td class="td-cell"><div class="cell has-data" id="c-S3-11">3</div></td><td class="td-cell"><div class="cell has-data" id="c-S3-12">5</div></td><td class="td-cell"><div class="cell has-data" id="c-S3-13">6</div></td><td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td></tr>
-                    <tr><td colspan="5" class="td-eval" style="border: none;"><div class="row-eval" id="eval-S3"></div></td></tr>
+                    <tr>
+                        <td></td>
+                        <td colspan="6" class="td-eval"><div class="row-eval" id="eval-c1-f"></div></td>
+                    </tr>
+                    <tr>
+                        <td class="td-label"><div class="node-label leader-label" id="label-c1-l">L</div></td>
+                        <td class="td-cell" id="td-c1-l-8"><div class="cell" id="c1-l-8"></div></td>
+                        <td class="td-cell" id="td-c1-l-9"><div class="cell" id="c1-l-9"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-l-10"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-l-11"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-l-12"></div></td>
+                        <td class="td-cell"><div class="cell" id="c1-l-13"></div></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td colspan="6" class="td-eval" style="border: none;"><div class="row-eval" id="eval-c1-l"></div></td>
+                    </tr>
                 </tbody>
             </table>
-            <div id="packet-S1" class="flying-packet"></div>
-            <div id="packet-S2" class="flying-packet"></div>
+            
+            <div id="pkt-c1-sin" class="flying-packet"></div>
+            <div id="pkt-c1-con" class="flying-packet"></div>
+            <div id="box-c1" class="entries-bounding-box"><span class="entries-box-label">ENTRIES</span></div>
+
+            <div class="timeline-controls">
+                <div class="timeline-panel" id="panel-c1-sin" onclick="setActivePanel('c1-sin')">
+                    <div class="timeline-header"><span>Corrida: Sin Fast Backup</span><span>nextIndex = <span class="var-val" id="ni-c1-sin">14</span></span></div>
+                    <div class="step-desc" id="desc-c1-sin"></div>
+                    <input type="range" id="scrub-c1-sin" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c1-sin" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c1-sin')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c1-sin', -1)">◀</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c1-sin', 1)">▶</button>
+                    </div>
+                </div>
+                <div class="timeline-panel" id="panel-c1-con" onclick="setActivePanel('c1-con')">
+                    <div class="timeline-header"><span>Corrida: Con Fast Backup</span><span>nextIndex = <span class="var-val" id="ni-c1-con">14</span></span></div>
+                    <div class="step-desc" id="desc-c1-con"></div>
+                    <input type="range" id="scrub-c1-con" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c1-con" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c1-con')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c1-con', -1)">◀</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c1-con', 1)">▶</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="timeline-controls">
-            <div class="timeline-panel">
-                <div class="timeline-header"><span>S1 - Sincronización Completa</span><span>nextIndex[S1] = <span class="var-val" id="ni-S1">14</span></span></div>
-                <div class="step-desc" id="desc-S1"></div>
-                <input type="range" id="scrubber-S1" min="0" max="22" value="0">
-                <div class="play-controls"><button id="btn-play-S1" class="primary" onclick="togglePlay('S1')">▶ Auto-Play Sync</button><button id="btn-prev-S1" onclick="step('S1', -1)">◀ Prev</button><button id="btn-next-S1" onclick="step('S1', 1)">Next ▶</button></div>
-            </div>
-            <div class="timeline-panel">
-                <div class="timeline-header"><span>S2 - Sincronización Parcial</span><span>nextIndex[S2] = <span class="var-val" id="ni-S2">14</span></span></div>
-                <div class="step-desc" id="desc-S2"></div>
-                <input type="range" id="scrubber-S2" min="0" max="14" value="0">
-                <div class="play-controls"><button id="btn-play-S2" class="primary" onclick="togglePlay('S2')">▶ Auto-Play Sync</button><button id="btn-prev-S2" onclick="step('S2', -1)">◀ Prev</button><button id="btn-next-S2" onclick="step('S2', 1)">Next ▶</button></div>
+        <!-- CASO 2: CONFLICTO DE BORDE -->
+        <div class="case-container" id="case2">
+            <div class="case-title">Caso 2: Conflicto Oculto (Borde del Snapshot)</div>
+            <table class="board">
+                <thead>
+                    <tr>
+                        <th style="width: 12%;"></th>
+                        <th class="idx-header" style="width: 11%;">10</th>
+                        <th class="idx-header" style="width: 11%;">11</th>
+                        <th class="idx-header" style="width: 11%;">12</th>
+                        <th class="idx-header" style="width: 11%;">13</th>
+                        <th class="rpc-header" id="hdr-c2-sin" style="width: 22%;">Sin Fast Backup (O(N))</th>
+                        <th class="rpc-header" id="hdr-c2-con" style="width: 22%;">Con Fast Backup (O(1))</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c2-f">F</div></td>
+                        <td class="td-cell"><div class="cell" id="c2-f-10"></div></td><td class="td-cell"><div class="cell" id="c2-f-11"></div></td><td class="td-cell"><div class="cell" id="c2-f-12"></div></td><td class="td-cell"><div class="cell" id="c2-f-13"></div></td>
+                        <td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td colspan="4" class="td-eval"><div class="row-eval" id="eval-c2-f"></div></td>
+                    </tr>
+                    <tr>
+                        <td class="td-label"><div class="node-label leader-label" id="label-c2-l">L</div></td>
+                        <td class="td-cell"><div class="cell" id="c2-l-10"></div></td>
+                        <td class="td-cell"><div class="cell" id="c2-l-11"></div></td>
+                        <td class="td-cell"><div class="cell" id="c2-l-12"></div></td>
+                        <td class="td-cell"><div class="cell" id="c2-l-13"></div></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td colspan="4" class="td-eval" style="border: none;"><div class="row-eval" id="eval-c2-l"></div></td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div id="pkt-c2-sin" class="flying-packet"></div>
+            <div id="pkt-c2-con" class="flying-packet"></div>
+            <div id="box-c2" class="entries-bounding-box"><span class="entries-box-label">ENTRIES</span></div>
+
+            <div class="timeline-controls">
+                <div class="timeline-panel" id="panel-c2-sin" onclick="setActivePanel('c2-sin')">
+                    <div class="timeline-header"><span>Corrida: Sin Fast Backup</span><span>nextIndex = <span class="var-val" id="ni-c2-sin">14</span></span></div>
+                    <div class="step-desc" id="desc-c2-sin"></div>
+                    <input type="range" id="scrub-c2-sin" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c2-sin" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c2-sin')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c2-sin', -1)">◀</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c2-sin', 1)">▶</button>
+                    </div>
+                </div>
+                <div class="timeline-panel" id="panel-c2-con" onclick="setActivePanel('c2-con')">
+                    <div class="timeline-header"><span>Corrida: Con Fast Backup</span><span>nextIndex = <span class="var-val" id="ni-c2-con">14</span></span></div>
+                    <div class="step-desc" id="desc-c2-con"></div>
+                    <input type="range" id="scrub-c2-con" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c2-con" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c2-con')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c2-con', -1)">◀</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c2-con', 1)">▶</button>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <!-- CASO 3: MATCH NORMAL -->
+        <div class="case-container" id="case3">
+            <div class="case-title">Caso 3: Match Exitoso (Sin necesidad de Snapshot)</div>
+            <table class="board">
+                <thead>
+                    <tr>
+                        <th style="width: 12%;"></th>
+                        <th class="idx-header" style="width: 11%;">10</th>
+                        <th class="idx-header" style="width: 11%;">11</th>
+                        <th class="idx-header" style="width: 11%;">12</th>
+                        <th class="idx-header" style="width: 11%;">13</th>
+                        <th class="rpc-header" id="hdr-c3-sin" style="width: 22%;">Sin Fast Backup (O(N))</th>
+                        <th class="rpc-header" id="hdr-c3-con" style="width: 22%;">Con Fast Backup (O(1))</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c3-f">F</div></td>
+                        <td class="td-cell"><div class="cell" id="c3-f-10"></div></td><td class="td-cell"><div class="cell" id="c3-f-11"></div></td><td class="td-cell"><div class="cell" id="c3-f-12"></div></td><td class="td-cell"><div class="cell" id="c3-f-13"></div></td>
+                        <td class="rpc-zone" rowspan="2"></td><td class="rpc-zone" rowspan="2"></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td colspan="4" class="td-eval"><div class="row-eval" id="eval-c3-f"></div></td>
+                    </tr>
+                    <tr>
+                        <td class="td-label"><div class="node-label leader-label" id="label-c3-l">L</div></td>
+                        <td class="td-cell"><div class="cell" id="c3-l-10"></div></td>
+                        <td class="td-cell"><div class="cell" id="c3-l-11"></div></td>
+                        <td class="td-cell"><div class="cell" id="c3-l-12"></div></td>
+                        <td class="td-cell"><div class="cell" id="c3-l-13"></div></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td colspan="4" class="td-eval" style="border: none;"><div class="row-eval" id="eval-c3-l"></div></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div id="pkt-c3-sin" class="flying-packet"></div>
+            <div id="pkt-c3-con" class="flying-packet"></div>
+            <div id="box-c3" class="entries-bounding-box"><span class="entries-box-label">ENTRIES</span></div>
+
+            <div class="timeline-controls">
+                <div class="timeline-panel" id="panel-c3-sin" onclick="setActivePanel('c3-sin')">
+                    <div class="timeline-header"><span>Corrida: Sin Fast Backup</span><span>nextIndex = <span class="var-val" id="ni-c3-sin">14</span></span></div>
+                    <div class="step-desc" id="desc-c3-sin"></div>
+                    <input type="range" id="scrub-c3-sin" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c3-sin" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c3-sin')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c3-sin', -1)">◀</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c3-sin', 1)">▶</button>
+                    </div>
+                </div>
+                <div class="timeline-panel" id="panel-c3-con" onclick="setActivePanel('c3-con')">
+                    <div class="timeline-header"><span>Corrida: Con Fast Backup</span><span>nextIndex = <span class="var-val" id="ni-c3-con">14</span></span></div>
+                    <div class="step-desc" id="desc-c3-con"></div>
+                    <input type="range" id="scrub-c3-con" min="0" value="0" onclick="event.stopPropagation()">
+                    <div class="play-controls">
+                        <button id="btn-play-c3-con" class="action-btn primary" onclick="event.stopPropagation(); togglePlay('c3-con')">▶ Auto-Play</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c3-con', -1)">◀</button>
+                        <button class="action-btn" onclick="event.stopPropagation(); step('c3-con', 1)">▶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="slogan-footer">TA050 - Sistemas Distribuidos I - Cátedra Espina</div>
     </div>
 
     <script>
-        // Styled RPC Headers
         const rpcTitle = (title, color) => `<div style="border-bottom: 2px solid ${color}; margin-bottom: 8px; padding-bottom: 6px; font-size: 15px; font-weight: 900; text-align: center; color: ${color}; letter-spacing: 1px;">${title}</div>`;
+        const reqTxt = (idx, term, entries) => `${rpcTitle('AppendEntries', '#856404')}<span style="color:#856404; font-size: 14px;">prevLogIdx= ${idx}<br>prevLogTerm= ${term}<br>entries= [${entries}]</span>`;
+        const snapTxt = (idx, term) => `${rpcTitle('InstallSnapshot', '#1A237E')}<span style="color:#1A237E; font-size: 14px;">lastIncludedIndex=${idx}<br>lastIncludedTerm=${term}<br>data=[x:42, y:9]</span>`;
+        const rejTxt = (xt, xi, xl) => { let t = `${rpcTitle('Response', '#721C24')}<span style="color:#721C24; font-size: 14px;">success=false`; if(xt) t+=`<br>XTerm=${xt}`; if(xi) t+=`<br>XIndex=${xi}`; if(xl!==undefined) t+=`<br>XLen=${xl}`; return t + `</span>`; };
+        const accTxt = () => `${rpcTitle('Response', '#155724')}<span style="color:#155724; font-size: 14px;">success=true</span>`;
+        
+        // Diseño vertical equilibrado
+        const snapHTML = (t, idx=10) => `<b>SNAP</b><span>T=${t}</span><div class="snap-detail"><div class="snap-title">Snapshot</div>last included index: ${idx}<br>last included term: ${t}<br>state machine state:<br>&nbsp;&nbsp;x &larr; 42<br>&nbsp;&nbsp;y &larr; 9</div>`;
+        const synced = `<span style="color:#0F5132; font-weight:900;">✅ El follower ahora se encuentra actualizado!</span>`;
 
-        // Request payloads
-        const reqTxt = (idx, term, entries) => `${rpcTitle('AppendEntries', '#856404')}<span style="color:#856404">prevLogIndex = ${idx}</span><br><span style="color:#856404">prevLogTerm = ${term}</span><br><span style="color:#856404">entries = [${entries}]</span>`;
-        const snapTxt = (idx, term) => `${rpcTitle('InstallSnapshot', '#1A237E')}<span style="color:#1A237E">lastIncludedIndex = ${idx}</span><br><span style="color:#1A237E">lastIncludedTerm = ${term}</span><br><span style="color:#1A237E">data = [x:42, y:9]</span>`;
-        
-        // Response payloads
-        const accTxt = () => `${rpcTitle('Response', '#155724')}<span style="color:#155724">term = 6<br>success = true</span>`;
-        const rejTxt = () => `${rpcTitle('Response', '#721C24')}<span style="color:#721C24">term = 6<br>success = false</span>`;
-        
-        // NUEVO: Respuesta especifica para InstallSnapshot (solo retorna term)
-        const snapResTxt = () => `${rpcTitle('Response', '#155724')}<span style="color:#155724">term = 6</span>`;
-        
-        // Status strings
-        const wait = `<span style="color:#6c757d">Evaluando AppendEntries...</span>`;
-        const tooShort = `<span style="color:#B31412">❌ Rechazado: Log es demasiado corto</span>`;
-        const mismatch = `<span style="color:#B31412">❌ Rechazado: Term no coincide!</span>`;
-        const match = `<span style="color:#0F5132">✅ Aceptado: match index y term!</span>`;
-        const deletingTxt = `<span style="color:#B31412">❌ Conflicto: Se BORRAN las entrada(s)</span>`;
-        const synced = `<span style="color:#0F5132">✅ Los logs ahora están sincronizados</span>`;
-        
-        const snapDataHTML = '<span style="font-size: 15.2px; line-height: 1.2;"><b>SNAPSHOT</b></span><div class="snap-detail"><div class="snap-title">snapshot</div>last included index: 10<br>last included term: 3<br>state machine state:<br>&nbsp;&nbsp;x &larr; 42<br>&nbsp;&nbsp;y &larr; 9</div>';
+        // ========================================================
+        // DATOS CASO 1: SEGUIDOR DESACTUALIZADO (ÍNDICE 8)
+        // ========================================================
+        const l1_ld0   = ['HIDDEN', 'HIDDEN', snapHTML(3), 3, 5, undefined];
+        const l1_ld1   = ['HIDDEN', 'HIDDEN', snapHTML(3), 3, 5, 6];
+        const l1_init  = [2, undefined, undefined, undefined, undefined, undefined];
+        const l1_snap  = ['HIDDEN', 'HIDDEN', snapHTML(3), undefined, undefined, undefined];
+        const l1_final = ['HIDDEN', 'HIDDEN', snapHTML(3), 3, 5, 6];
 
-        const S1_TL = [
-            { d: "Estado Inicial: S3 tiene un log compactado en index 10. S1 está vacío.", l: [], ni: 14, h: null, pkt: null },
-            { d: "Lider envía AppendEntries por el index 13", l: [], ni: 14, h: null, pkt: { loc: 'S3', type: 'request', txt: reqTxt(12, 5, '6') }, tp: 12, te: [13] },
-            { d: "RPC va hacia S1.", l: [], ni: 14, h: null, pkt: { loc: 'S1', type: 'request', txt: reqTxt(12, 5, '6') } },
-            { d: "El log de S1 es vacio. Check de consistencia falla.", l: [], ni: 14, h: null, e: tooShort, pkt: { loc: 'S1', type: 'reject', txt: rejTxt() } },
-            { d: "Response devuelve success=false al lider.", l: [], ni: 14, h: null, pkt: { loc: 'S3', type: 'reject', txt: rejTxt() } },
-            { d: "El lider decrementa nextIndex a 13 y reintenta.", l: [], ni: 13, h: null, pkt: { loc: 'S3', type: 'request', txt: reqTxt(11, 3, '5,6') }, tp: 11, te: [12, 13] },
-            { d: "RPC va hacia S1.", l: [], ni: 13, h: null, pkt: { loc: 'S1', type: 'request', txt: reqTxt(11, 3, '5,6') } },
-            { d: "El log de S1 es vacio. Check de consistencia falla.", l: [], ni: 13, h: null, e: tooShort, pkt: { loc: 'S1', type: 'reject', txt: rejTxt() } },
-            { d: "Response devuelve success=false al lider.", l: [], ni: 13, h: null, pkt: { loc: 'S3', type: 'reject', txt: rejTxt() } },
-            { d: "El lider decrementa nextIndex a 12 y reintenta.", l: [], ni: 12, h: null, pkt: { loc: 'S3', type: 'request', txt: reqTxt(10, 3, '3,5,6') }, tp: 10, te: [11, 12, 13] },
-            { d: "RPC va hacia S1.", l: [], ni: 12, h: null, pkt: { loc: 'S1', type: 'request', txt: reqTxt(10, 3, '3,5,6') } },
-            { d: "El log de S1 es vacio. Check de consistencia falla.", l: [], ni: 12, h: null, e: tooShort, pkt: { loc: 'S1', type: 'reject', txt: rejTxt() } },
-            { d: "Response devuelve success=false al lider.", l: [], ni: 12, h: null, pkt: { loc: 'S3', type: 'reject', txt: rejTxt() } },
-            { d: "El lider decrementa nextIndex a 11. Descubre que el index 10 está compactado!", l: [], ni: 11, h: null, e: "<span style='color:#0D47A1'>Leader must send snapshot</span>", pkt: null },
-            { d: "El lider crea un RPC del tipo InstallSnapshot.", l: [], ni: 11, h: null, pkt: { loc: 'S3', type: 'snapshot', txt: snapTxt(10, 3) }, tp: 10, te: [] },
-            { d: "Se envía InstallSnapshot a S1.", l: [], ni: 11, h: null, pkt: { loc: 'S1', type: 'snapshot', txt: snapTxt(10, 3) } },
-            // AQUI SE USA EL NUEVO snapResTxt() PARA EL RESPONSE DEL SNAPSHOT
-            { d: "S1 aplica el Snapshot y resetea su State Machine.", l: [snapDataHTML], ni: 11, h: 10, e: "<span style='color:#155724'>Snapshot Applied</span>", pkt: { loc: 'S1', type: 'accept', txt: snapResTxt() } },
-            { d: "Se responde enviando el term actual al líder.", l: [snapDataHTML], ni: 11, h: null, pkt: { loc: 'S3', type: 'accept', txt: snapResTxt() } },
-            { d: "Leader sends remaining entries [11, 12, 13].", l: [snapDataHTML], ni: 11, h: null, pkt: { loc: 'S3', type: 'request', txt: reqTxt(10, 3, '3,5,6') }, tp: 10, te: [11, 12, 13] },
-            { d: "RPC travels to S1.", l: [snapDataHTML], ni: 11, h: null, pkt: { loc: 'S1', type: 'request', txt: reqTxt(10, 3, '3,5,6') } },
-            { d: "S1 finds match at prevLogIndex 10. Accepts!", l: [snapDataHTML, 3, 5, 6], ni: 11, h: null, e: match, pkt: { loc: 'S1', type: 'accept', txt: accTxt() } },
-            { d: "Acceptance travels to Leader.", l: [snapDataHTML, 3, 5, 6], ni: 11, h: null, pkt: { loc: 'S3', type: 'accept', txt: accTxt() } },
-            { d: "S1 is fully synchronized.", l: [snapDataHTML, 3, 5, 6], ni: 14, h: null, e: synced, pkt: null }
+        const C1_SIN = [
+            { d: "Estado Inicial. F estuvo particionado y su log llega solo hasta el índice 8.", ld: l1_ld0, l: l1_init, ni: 13, h: null, pkt: null },
+            { d: "El cliente envía un comando. L anexa el Término 6 en index 13.", ld: l1_ld1, l: l1_init, ni: 13, cIns: 13, pkt: null },
+            { d: "L envía index 13. Valida contra prevLogIndex=12.", ld: l1_ld1, l: l1_init, ni: 13, tp: 12, te: [13], pkt: { loc: 'l', type: 'request', txt: reqTxt(12, 5, '6') } },
+            { d: "F evalúa y rechaza (su log termina en 8).", ld: l1_ld1, l: l1_init, ni: 13, h: 12, e: "<span style='color:#B31412'>❌ Rechazado</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Al ser O(N), decrementa nextIndex a 12.", ld: l1_ld1, l: l1_init, ni: 12, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L reintenta enviando prevLogIndex=11.", ld: l1_ld1, l: l1_init, ni: 12, tp: 11, te: [12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(11, 3, '5,6') } },
+            { d: "F evalúa y rechaza.", ld: l1_ld1, l: l1_init, ni: 12, h: 11, e: "<span style='color:#B31412'>❌ Rechazado</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Decrementa nextIndex a 11.", ld: l1_ld1, l: l1_init, ni: 11, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L reintenta enviando prevLogIndex=10.", ld: l1_ld1, l: l1_init, ni: 11, tp: 10, te: [11, 12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 3, '3,5,6') } },
+            { d: "F evalúa y rechaza.", ld: l1_ld1, l: l1_init, ni: 11, h: 10, e: "<span style='color:#B31412'>❌ Rechazado</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Decrementa nextIndex a 10.", ld: l1_ld1, l: l1_init, ni: 10, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L nota que para enviar a nextIndex=10 requiere prevLogIndex=9, el cual ya fue compactado. Aborta.", ld: l1_ld1, l: l1_init, ni: 10, pkt: null },
+            { d: "L envía InstallSnapshot.", ld: l1_ld1, l: l1_init, ni: 10, pkt: { loc: 'l', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F recibe el Snapshot. Se eliminan las entradas obsoletas de su log.", ld: l1_ld1, l: l1_init, ni: 10, h: 10, del: [8], e: "<span style='color:#B31412'>Descartando entradas obsoletas...</span>", pkt: { loc: 'f', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F instala el Snapshot. Las celdas previas colapsan y desaparecen.", ld: l1_ld1, l: l1_snap, ni: 10, h: 10, collapse: true, e: "<span style='color:#155724'>✅ Snapshot Aplicado</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "L ajusta nextIndex=11envia las entries desde el índice 11 ([3, 5, 6]).", ld: l1_ld1, l: l1_snap, ni: 11, tp: 10, te: [11, 12, 13], collapse: true, pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 3, '3,5,6') } },
+            { d: "F acepta y anexa las entradas.", ld: l1_ld1, l: l1_final, ni: 14, collapse: true, e: "<span style='color:#0F5132'>✅ Entradas anexadas</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "✅ El follower ahora se encuentra actualizado!", ld: l1_ld1, l: l1_final, ni: 14, collapse: true, e: synced, pkt: null }
         ];
 
-        const l2_0 = [snapDataHTML, 3, 4];
-        const S2_TL = [
-            { d: "Initial State. S2 has a term conflict at index 12.", l: l2_0, ni: 14, h: null, del: null, e: "", pkt: null },
-            { d: "Leader creates AppendEntries. Starts checking at index 13.", l: l2_0, ni: 14, h: null, pkt: { loc: 'S3', type: 'request', txt: reqTxt(12, 5, '6') }, tp: 12, te: [13] },
-            { d: "RPC travels to S2. S2 evaluates if it has index 13.", l: l2_0, ni: 14, h: 13, e: wait, pkt: { loc: 'S2', type: 'request', txt: reqTxt(12, 5, '6') } },
-            { d: "S2 log is inconsistent (missing). Consistency check fails.", l: l2_0, ni: 14, h: 13, e: tooShort, pkt: { loc: 'S2', type: 'reject', txt: rejTxt() } },
-            { d: "Rejection travels back to the Leader.", l: l2_0, ni: 14, h: null, pkt: { loc: 'S3', type: 'reject', txt: rejTxt() } },
-            { d: "Leader decrements nextIndex and retries.", l: l2_0, ni: 13, h: null, pkt: { loc: 'S3', type: 'request', txt: reqTxt(11, 3, '5,6') }, tp: 11, te: [12, 13] },
-            { d: "RPC travels to S2. S2 evaluates if index 12 matches Term 5.", l: l2_0, ni: 13, h: 12, e: wait, pkt: { loc: 'S2', type: 'request', txt: reqTxt(11, 3, '5,6') } },
-            { d: "S2 has Term 4 at index 12. Consistency check fails.", l: l2_0, ni: 13, h: 12, e: mismatch, pkt: { loc: 'S2', type: 'reject', txt: rejTxt() } },
-            { d: "Rejection travels back to the Leader.", l: l2_0, ni: 13, h: null, pkt: { loc: 'S3', type: 'reject', txt: rejTxt() } },
-            { d: "Leader decrements nextIndex and retries.", l: l2_0, ni: 12, h: null, pkt: { loc: 'S3', type: 'request', txt: reqTxt(11, 3, '5,6') }, tp: 11, te: [12, 13] },
-            { d: "RPC travels to S2. S2 HAS index 11 with Term 3! Match!", l: l2_0, ni: 12, h: 11, e: match, pkt: { loc: 'S2', type: 'request', txt: reqTxt(11, 3, '5,6') } },
-            { d: "S2 detects a term conflict at index 12. Deleting entry...", l: l2_0, ni: 12, h: null, del: 12, e: deletingTxt, pkt: { loc: 'S2', type: 'request', txt: reqTxt(11, 3, '5,6') } },
-            { d: "S2 accepts. It appends the new entries [5,6].", l: [snapDataHTML, 3, 5, 6], ni: 12, h: null, e: "S2 overwrote conflicting entries.", pkt: { loc: 'S2', type: 'accept', txt: accTxt() } },
-            { d: "Acceptance travels back to the Leader.", l: [snapDataHTML, 3, 5, 6], ni: 12, h: null, pkt: { loc: 'S3', type: 'accept', txt: accTxt() } },
-            { d: "Leader updates nextIndex. S2 is fully synchronized.", l: [snapDataHTML, 3, 5, 6], ni: 14, h: null, e: synced, pkt: null }
+        const C1_CON = [
+            { d: "Estado Inicial. F estuvo particionado y su log llega solo hasta el índice 8.", ld: l1_ld0, l: l1_init, ni: 13, h: null, pkt: null },
+            { d: "El cliente envía un comando. L anexa el Término 6 en index 13.", ld: l1_ld1, l: l1_init, ni: 13, cIns: 13, pkt: null },
+            { d: "L envía index 13. Valida contra prevLogIndex=12.", ld: l1_ld1, l: l1_init, ni: 13, tp: 12, te: [13], pkt: { loc: 'l', type: 'request', txt: reqTxt(12, 5, '6') } },
+            { d: "F rechaza devolviendo la longitud de su log: XLen=9.", ld: l1_ld1, l: l1_init, ni: 13, h: 12, e: "<span style='color:#B31412'>❌ Rechazado</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt(null, null, 9) } },
+            { d: "L recibe el rechazo. Evalúa XLen=9 y salta nextIndex directo a 9.", ld: l1_ld1, l: l1_init, ni: 9, pkt: { loc: 'l', type: 'reject', txt: rejTxt(null, null, 9) } },
+            { d: "Como nextIndex (9) es <= al index del Snapshot (10), L dispara Snapshot.", ld: l1_ld1, l: l1_init, ni: 9, pkt: { loc: 'l', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F recibe el Snapshot. Se eliminan las entradas obsoletas de su log.", ld: l1_ld1, l: l1_init, ni: 9, h: 10, del: [8], e: "<span style='color:#B31412'>Descartando entradas obsoletas...</span>", pkt: { loc: 'f', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F instala el Snapshot. Las celdas previas colapsan y desaparecen.", ld: l1_ld1, l: l1_snap, ni: 9, h: 10, collapse: true, e: "<span style='color:#155724'>✅ Snapshot Aplicado</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "L ajusta nextIndex=11 y envia las entries desde el índice 11 ([3, 5, 6]).", ld: l1_ld1, l: l1_snap, ni: 11, tp: 10, te: [11, 12, 13], collapse: true, pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 3, '3,5,6') } },
+            { d: "F acepta y anexa las entradas.", ld: l1_ld1, l: l1_final, ni: 14, collapse: true, e: "<span style='color:#0F5132'>✅ Entradas anexadas</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "✅ El follower ahora se encuentra actualizado!", ld: l1_ld1, l: l1_final, ni: 14, collapse: true, e: synced, pkt: null }
         ];
+
+        // ========================================================
+        // DATOS CASO 2: CONFLICTO DE BORDE 
+        // ========================================================
+        const l2_ld0 = [snapHTML(3), 5, 5, undefined];
+        const l2_ld1 = [snapHTML(3), 5, 5, 6];
+        const l2_init = [2, 2, 2];
+
+        const C2_SIN = [
+            { d: "Estado Inicial. Lider esperando.", ld: l2_ld0, l: l2_init, ni: 13, h: null, pkt: null },
+            { d: "El cliente envía un comando. L anexa el Término 6.", ld: l2_ld1, l: l2_init, ni: 13, cIns: 13, pkt: null },
+            { d: "L envía index 13.", ld: l2_ld1, l: l2_init, ni: 13, tp: 12, te: [13], pkt: { loc: 'l', type: 'request', txt: reqTxt(12, 5, '6') } },
+            { d: "F rechaza (mismatch T=2 vs T=5).", ld: l2_ld1, l: l2_init, ni: 13, h: 12, e: "<span style='color:#B31412'>❌ Mismatch</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Decrementa nextIndex a 12.", ld: l2_ld1, l: l2_init, ni: 12, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L reintenta enviando prevLogIndex=11.", ld: l2_ld1, l: l2_init, ni: 12, tp: 11, te: [12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(11, 5, '5,6') } },
+            { d: "F rechaza (mismatch).", ld: l2_ld1, l: l2_init, ni: 12, h: 11, e: "<span style='color:#B31412'>❌ Mismatch</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Decrementa nextIndex a 11.", ld: l2_ld1, l: l2_init, ni: 11, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L reintenta enviando prevLogIndex=10.", ld: l2_ld1, l: l2_init, ni: 11, tp: 10, te: [11, 12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 3, '5,5,6') } },
+            { d: "F rechaza (mismatch T=2 vs T=3).", ld: l2_ld1, l: l2_init, ni: 11, h: 10, e: "<span style='color:#B31412'>❌ Mismatch</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Decrementa nextIndex a 10.", ld: l2_ld1, l: l2_init, ni: 10, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L nota que nextIndex=10 choca con Snapshot.", ld: l2_ld1, l: l2_init, ni: 10, pkt: null },
+            { d: "L aborta y envía InstallSnapshot.", ld: l2_ld1, l: l2_init, ni: 10, pkt: { loc: 'l', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F recibe Snapshot. Borra todo el log conflictivo.", ld: l2_ld1, l: l2_init, ni: 10, del: [10, 11, 12], e: "<span style='color:#B31412'>❌ Conflicto: Borrando...</span>", pkt: { loc: 'f', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F instala el Snapshot.", ld: l2_ld1, l: [snapHTML(3)], ni: 10, h: 10, e: "<span style='color:#155724'>✅ Snapshot Aplicado</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "L ajusta nextIndex=11 y envia las entries desde el índice 11 ([5, 5, 6]).", ld: l2_ld1, l: [snapHTML(3)], ni: 11, tp: 10, te: [11, 12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 3, '5,5,6') } },
+            { d: "F acepta y anexa.", ld: l2_ld1, l: [snapHTML(3), 5, 5, 6], ni: 14, e: "<span style='color:#0F5132'>✅ Entradas anexadas</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "✅ El follower ahora se encuentra actualizado!", ld: l2_ld1, l: [snapHTML(3), 5, 5, 6], ni: 14, e: synced, pkt: null }
+        ];
+
+        const C2_CON = [
+            { d: "Estado Inicial. Lider esperando.", ld: l2_ld0, l: l2_init, ni: 13, h: null, pkt: null },
+            { d: "El cliente envía un comando. L anexa el Término 6.", ld: l2_ld1, l: l2_init, ni: 13, cIns: 13, pkt: null },
+            { d: "L envía index 13.", ld: l2_ld1, l: l2_init, ni: 13, tp: 12, te: [13], pkt: { loc: 'l', type: 'request', txt: reqTxt(12, 5, '6') } },
+            { d: "F rechaza devolviendo XTerm=2, XIndex=10.", ld: l2_ld1, l: l2_init, ni: 13, h: 12, e: "<span style='color:#B31412'>❌ Mismatch</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt(2, 10, null) } },
+            { d: "L recibe rechazo. No tiene T=2. Salta a nextIndex=10.", ld: l2_ld1, l: l2_init, ni: 10, pkt: { loc: 'l', type: 'reject', txt: rejTxt(2, 10, null) } },
+            { d: "Como nextIndex (10) es <= 10, L dispara Snapshot.", ld: l2_ld1, l: l2_init, ni: 10, pkt: { loc: 'l', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F recibe Snapshot. Borra log conflictivo.", ld: l2_ld1, l: l2_init, ni: 10, del: [10, 11, 12], e: "<span style='color:#B31412'>❌ Conflicto: Borrando...</span>", pkt: { loc: 'f', type: 'snapshot', txt: snapTxt(10, 3) } },
+            { d: "F instala el Snapshot.", ld: l2_ld1, l: [snapHTML(3)], ni: 10, h: 10, e: "<span style='color:#155724'>✅ Snapshot Aplicado</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "L ajusta nextIndex=11 y envía las entries desde el índice 11 ([5, 5, 6]).", ld: l2_ld1, l: [snapHTML(3)], ni: 11, tp: 10, te: [11, 12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 3, '5,5,6') } },
+            { d: "F acepta y anexa.", ld: l2_ld1, l: [snapHTML(3), 5, 5, 6], ni: 14, e: "<span style='color:#0F5132'>✅ Entradas anexadas</span>", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "✅ El follower ahora se encuentra actualizado!", ld: l2_ld1, l: [snapHTML(3), 5, 5, 6], ni: 14, e: synced, pkt: null }
+        ];
+
+        // ========================================================
+        // DATOS CASO 3: MATCH NORMAL
+        // ========================================================
+        const l3_ld0 = [snapHTML(4), 6, 6, undefined];
+        const l3_ld1 = [snapHTML(4), 6, 6, 6];
+        const l3_init = [snapHTML(4), 5, 5];
+
+        const C3_SIN = [
+            { d: "Estado Inicial. Lider esperando.", ld: l3_ld0, l: l3_init, ni: 13, h: null, pkt: null },
+            { d: "El cliente envía un comando. L anexa el Término 6.", ld: l3_ld1, l: l3_init, ni: 13, cIns: 13, pkt: null },
+            { d: "L envía index 13.", ld: l3_ld1, l: l3_init, ni: 13, tp: 12, te: [13], pkt: { loc: 'l', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "F rechaza (mismatch T=5 vs T=6).", ld: l3_ld1, l: l3_init, ni: 13, h: 12, e: "<span style='color:#B31412'>❌ Mismatch</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Decrementa nextIndex a 12.", ld: l3_ld1, l: l3_init, ni: 12, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L reintenta enviando prevLogIndex=11.", ld: l3_ld1, l: l3_init, ni: 12, tp: 11, te: [12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(11, 6, '6,6') } },
+            { d: "F rechaza (mismatch T=5 vs T=6).", ld: l3_ld1, l: l3_init, ni: 12, h: 11, e: "<span style='color:#B31412'>❌ Mismatch</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt() } },
+            { d: "L recibe el rechazo. Decrementa nextIndex a 11.", ld: l3_ld1, l: l3_init, ni: 11, pkt: { loc: 'l', type: 'reject', txt: rejTxt() } },
+            { d: "L reintenta enviando prevLogIndex=10 con prevLogTerm=4 (del snapshot)", ld: l3_ld1, l: l3_init, ni: 11, tp: 10, te: [11, 12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 4, '6,6,6') } },
+            { d: "F tiene T=4 en 10. ¡MATCH!", ld: l3_ld1, l: l3_init, ni: 11, h: 10, e: "<span style='color:#0F5132'>✅ Match</span>", pkt: { loc: 'f', type: 'request', txt: reqTxt(10, 4, '6,6,6') } },
+            { d: "F detecta conflicto en 11 y 12. Borrando entradas...", ld: l3_ld1, l: l3_init, ni: 11, del: [11, 12], e: "<span style='color:#B31412'>❌ Conflicto: Borrando...</span>", pkt: { loc: 'f', type: 'request', txt: reqTxt(10, 4, '6,6,6') } },
+            { d: "F sobrescribe log.", ld: l3_ld1, l: [snapHTML(4), 6, 6, 6], ni: 11, e: "F actualiza su log.", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "L recibe confirmación.", ld: l3_ld1, l: [snapHTML(4), 6, 6, 6], ni: 14, e: "<span style='color:#0F5132'>✅ Entradas anexadas</span>", pkt: { loc: 'l', type: 'accept', txt: accTxt() } },
+            { d: "✅ El follower ahora se encuentra actualizado!", ld: l3_ld1, l: [snapHTML(4), 6, 6, 6], ni: 14, e: synced, pkt: null }
+        ];
+
+        const C3_CON = [
+            { d: "Estado Inicial. Lider esperando.", ld: l3_ld0, l: l3_init, ni: 13, h: null, pkt: null },
+            { d: "El cliente envía un comando. L anexa el Término 6.", ld: l3_ld1, l: l3_init, ni: 13, cIns: 13, pkt: null },
+            { d: "L envía index 13.", ld: l3_ld1, l: l3_init, ni: 13, tp: 12, te: [13], pkt: { loc: 'l', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "F rechaza XTerm=5, XIndex=11.", ld: l3_ld1, l: l3_init, ni: 13, h: 12, e: "<span style='color:#B31412'>❌ Mismatch</span>", pkt: { loc: 'f', type: 'reject', txt: rejTxt(5, 11, 13) } },
+            { d: "L recibe rechazo. Busca XTerm=5 y no lo tiene. Salta a nextIndex=11.", ld: l3_ld1, l: l3_init, ni: 11, pkt: { loc: 'l', type: 'reject', txt: rejTxt(5, 11, 13) } },
+            { d: "L envía paquete ajustado [6,6,6] validando prevLogIndex=10.", ld: l3_ld1, l: l3_init, ni: 11, tp: 10, te: [11, 12, 13], pkt: { loc: 'l', type: 'request', txt: reqTxt(10, 4, '6,6,6') } },
+            { d: "F tiene T=4 en 10. ¡MATCH!", ld: l3_ld1, l: l3_init, ni: 11, h: 10, e: "<span style='color:#0F5132'>✅ Match</span>", pkt: { loc: 'f', type: 'request', txt: reqTxt(10, 4, '6,6,6') } },
+            { d: "F detecta conflicto en 11 y 12. Borrando entradas...", ld: l3_ld1, l: l3_init, ni: 11, del: [11, 12], e: "<span style='color:#B31412'>❌ Conflicto: Borrando...</span>", pkt: { loc: 'f', type: 'request', txt: reqTxt(10, 4, '6,6,6') } },
+            { d: "F sobrescribe log.", ld: l3_ld1, l: [snapHTML(4), 6, 6, 6], ni: 11, e: "F actualiza su log.", pkt: { loc: 'f', type: 'accept', txt: accTxt() } },
+            { d: "L recibe confirmación.", ld: l3_ld1, l: [snapHTML(4), 6, 6, 6], ni: 14, e: "<span style='color:#0F5132'>✅ Entradas anexadas</span>", pkt: { loc: 'l', type: 'accept', txt: accTxt() } },
+            { d: "✅ El follower ahora se encuentra actualizado!", ld: l3_ld1, l: [snapHTML(4), 6, 6, 6], ni: 14, e: synced, pkt: null }
+        ];
+
+        let state = {
+            'c1-sin': { step: 0, data: C1_SIN, case: 'c1', col: 'sin' }, 'c1-con': { step: 0, data: C1_CON, case: 'c1', col: 'con' },
+            'c2-sin': { step: 0, data: C2_SIN, case: 'c2', col: 'sin' }, 'c2-con': { step: 0, data: C2_CON, case: 'c2', col: 'con' },
+            'c3-sin': { step: 0, data: C3_SIN, case: 'c3', col: 'sin' }, 'c3-con': { step: 0, data: C3_CON, case: 'c3', col: 'con' }
+        };
+        let velocity = 0.8;
+
+        function toggleMaximize() {
+            const wrapper = document.getElementById('raft-wrapper');
+            const btn = document.getElementById('btn-maximize');
+            if (!document.fullscreenElement) {
+                if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+                else if (document.documentElement.webkitRequestFullscreen) document.documentElement.webkitRequestFullscreen();
+                else if (document.documentElement.msRequestFullscreen) document.documentElement.msRequestFullscreen();
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                else if (document.msExitFullscreen) document.msExitFullscreen();
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => {
+            const wrapper = document.getElementById('raft-wrapper');
+            const btn = document.getElementById('btn-maximize');
+            if (document.fullscreenElement) {
+                wrapper.classList.add('maximized');
+                btn.innerHTML = "🔳 Minimizar"; 
+                document.body.style.overflow = "hidden";
+            } else {
+                wrapper.classList.remove('maximized');
+                btn.innerHTML = "🔲 Pantalla Completa"; 
+                document.body.style.overflow = "auto";
+            }
+        });
+
+        function getRelativePos(el, parent) {
+            let top = 0, left = 0;
+            while (el && el !== parent) { top += el.offsetTop; left += el.offsetLeft; el = el.offsetParent; }
+            return { top, left };
+        }
+
+        function setActivePanel(id) {
+            activePanelId = id;
+            document.querySelectorAll('.timeline-panel').forEach(p => p.classList.remove('active-panel'));
+            const p = document.getElementById(`panel-${id}`);
+            if(p) p.classList.add('active-panel');
+        }
+
+        function initScrubbers() {
+            Object.keys(state).forEach(id => {
+                let s = document.getElementById(`scrub-${id}`);
+                if (s) {
+                    s.max = state[id].data.length - 1;
+                    s.addEventListener('input', (e) => {
+                        setActivePanel(id);
+                        stopAllInCase(state[id].case);
+                        state[id].step = parseInt(e.target.value);
+                        render(id);
+                    });
+                }
+            });
+            setActivePanel('c1-sin');
+        }
+
+        function render(id) {
+            const cur = state[id];
+            const frame = cur.data[cur.step];
+            const cid = cur.case; 
+            const collapseEnabled = frame.collapse === true;
+
+            document.getElementById(`desc-${id}`).innerHTML = frame.d;
+            document.getElementById(`ni-${id}`).innerText = frame.ni;
+            document.getElementById(`scrub-${id}`).value = cur.step;
+            
+            const indices = cid === 'c1' ? [8, 9, 10, 11, 12, 13] : [10, 11, 12, 13];
+
+            // Renderizar FOLLOWER
+            for (let i = 0; i < indices.length; i++) {
+                let actual = indices[i];
+                let c = document.getElementById(`${cid}-f-${actual}`);
+                if(c) {
+                    c.className = 'cell';
+                    if (frame.l[i] === 'HIDDEN') {
+                        c.innerHTML = ''; c.classList.add('hidden-cell');
+                    } else if (frame.l[i] !== undefined && String(frame.l[i]).includes('SNAP')) {
+                        c.innerHTML = frame.l[i]; c.classList.add('snap-cell');
+                    } else if (frame.l[i] !== undefined) {
+                        c.innerHTML = frame.l[i]; c.classList.add('has-data');
+                    } else {
+                        c.innerHTML = ''; c.classList.add('empty-cell');
+                    }
+                    if (frame.h === actual) c.classList.add('highlight');
+                    if (frame.del && frame.del.includes(actual)) c.classList.add('vanish');
+                }
+            }
+
+            // Renderizar LÍDER
+            for (let i = 0; i < indices.length; i++) {
+                let actual = indices[i];
+                let cL = document.getElementById(`${cid}-l-${actual}`);
+                if(cL) {
+                    cL.className = 'cell'; 
+                    cL.classList.remove('prev-index-marker');
+                    
+                    if (frame.ld[i] === 'HIDDEN') {
+                        cL.innerHTML = ''; cL.classList.add('hidden-cell');
+                    } else if (frame.ld[i] !== undefined && String(frame.ld[i]).includes('SNAP')) {
+                        cL.innerHTML = frame.ld[i]; cL.classList.add('snap-cell');
+                    } else if (frame.ld[i] !== undefined) {
+                        cL.innerHTML = frame.ld[i]; cL.classList.add('has-data');
+                    } else {
+                        cL.innerHTML = ''; cL.classList.add('empty-cell');
+                    }
+                    
+                    if (frame.cIns === actual) cL.classList.add('client-insert');
+                    
+                    // AQUÍ ESTÁ LA CLAVE: Si coincide con el prevLogIndex, marca la celda (sea normal o snap)
+                    if (frame.tp === actual) cL.classList.add('prev-index-marker');
+                }
+            }
+            
+            // Lógica de Colapso Visual para columnas 8 y 9
+            if (cid === 'c1') {
+                [8, 9].forEach(idx => {
+                    const th = document.getElementById(`th-c1-${idx}`);
+                    const tdF = document.getElementById(`td-c1-f-${idx}`);
+                    const tdL = document.getElementById(`td-c1-l-${idx}`);
+                    
+                    if (collapseEnabled) {
+                        th?.classList.add('collapsed-col');
+                        tdF?.classList.add('collapsed-col');
+                        tdL?.classList.add('collapsed-col');
+                    } else {
+                        th?.classList.remove('collapsed-col');
+                        tdF?.classList.remove('collapsed-col');
+                        tdL?.classList.remove('collapsed-col');
+                    }
+                });
+            }
+
+            document.getElementById(`eval-${cid}-f`).innerHTML = frame.e || "";
+
+            // Entries Bounding Box
+            const boundingBox = document.getElementById(`box-${cid}`);
+            const entryTargets = frame.te || [];
+            if (entryTargets.length > 0) {
+                const firstCell = document.getElementById(`${cid}-l-${entryTargets[0]}`);
+                const lastCell = document.getElementById(`${cid}-l-${entryTargets[entryTargets.length - 1]}`);
+                const parentContainer = document.getElementById(`case${cid.replace('c','')}`);
+
+                if (firstCell && lastCell && parentContainer && !firstCell.parentElement.classList.contains('collapsed-col')) {
+                    const firstPos = getRelativePos(firstCell, parentContainer);
+                    const lastPos = getRelativePos(lastCell, parentContainer);
+                    const offset = 8; 
+
+                    const left = firstPos.left - offset;
+                    const top = firstPos.top - offset;
+                    const width = (lastPos.left + lastCell.offsetWidth) - firstPos.left + (offset * 2);
+                    const height = firstCell.offsetHeight + (offset * 2);
+
+                    boundingBox.style.top = `${top}px`;
+                    boundingBox.style.left = `${left}px`;
+                    boundingBox.style.width = `${width}px`;
+                    boundingBox.style.height = `${height}px`;
+                    boundingBox.style.opacity = '1';
+                } else {
+                    boundingBox.style.opacity = '0';
+                }
+            } else {
+                boundingBox.style.opacity = '0';
+            }
+
+            const pkt = document.getElementById(`pkt-${cid}-${cur.col}`);
+            const otherCol = cur.col === 'sin' ? 'con' : 'sin';
+            const pktOther = document.getElementById(`pkt-${cid}-${otherCol}`);
+            
+            if (pktOther) {
+                pktOther.style.opacity = '0';
+                pktOther.style.pointerEvents = 'none';
+            }
+
+            if (!frame.pkt) {
+                pkt.style.opacity = '0';
+                pkt.style.pointerEvents = 'none';
+            } else {
+                pkt.innerHTML = frame.pkt.txt;
+                pkt.className = `flying-packet ${frame.pkt.type}`;
+                pkt.style.opacity = '1';
+                pkt.style.pointerEvents = 'auto';
+
+                const dashRect = document.getElementById(`case${cid.replace('c','')}`);
+                const rowLabel = document.getElementById(`label-${cid}-${frame.pkt.loc}`);
+                const colHeader = document.getElementById(`hdr-${id}`);
+
+                if(rowLabel && colHeader && dashRect) {
+                    const rowPos = getRelativePos(rowLabel, dashRect);
+                    const colPos = getRelativePos(colHeader, dashRect);
+                    pkt.style.top = `${rowPos.top + (rowLabel.offsetHeight/2)}px`;
+                    pkt.style.left = `${colPos.left + (colHeader.offsetWidth/2)}px`;
+                }
+            }
+        }
+
+        function stopAllInCase(cid) {
+            [`${cid}-sin`, `${cid}-con`].forEach(id => {
+                if (state[id].playing) {
+                    state[id].playing = false;
+                    const btn = document.getElementById(`btn-play-${id}`);
+                    if(btn) btn.innerHTML = "▶ Auto-Play";
+                }
+            });
+        }
+
+        function resetOtherCol(id) {
+            const cid = state[id].case;
+            const otherId = id.endsWith('sin') ? `${cid}-con` : `${cid}-sin`;
+            
+            if (state[otherId].step !== 0) {
+                state[otherId].step = 0;
+                const scrub = document.getElementById(`scrub-${otherId}`);
+                if (scrub) scrub.value = 0;
+                const desc = document.getElementById(`desc-${otherId}`);
+                if (desc) desc.innerHTML = state[otherId].data[0].d;
+                const ni = document.getElementById(`ni-${otherId}`);
+                if (ni) ni.innerText = state[otherId].data[0].ni;
+            }
+        }
+
+        const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+        async function togglePlay(id) {
+            setActivePanel(id);
+            const btn = document.getElementById(`btn-play-${id}`);
+            if (state[id].playing) {
+                state[id].playing = false; btn.innerHTML = "▶ Auto-Play";
+                btn.classList.remove('danger'); btn.classList.add('primary');
+            } else {
+                stopAllInCase(state[id].case);
+                resetOtherCol(id);
+                if (state[id].step >= state[id].data.length - 1) state[id].step = 0;
+                
+                state[id].playing = true; btn.innerHTML = "⏸ Pausar";
+                btn.classList.remove('primary'); btn.classList.add('danger');
+                render(id);
+
+                while (state[id].playing && state[id].step < state[id].data.length - 1) {
+                    await sleep(1500 / velocity);
+                    if (!state[id].playing) break; 
+                    state[id].step++; render(id);
+                }
+                state[id].playing = false; btn.innerHTML = "▶ Auto-Play";
+                btn.classList.remove('danger'); btn.classList.add('primary');
+            }
+        }
+
+        function step(id, dir) {
+            setActivePanel(id);
+            stopAllInCase(state[id].case);
+            resetOtherCol(id);
+            let n = state[id].step + dir;
+            if (n >= 0 && n < state[id].data.length) {
+                state[id].step = n; render(id);
+            }
+        }
+
+        function resetAll() {
+            Object.keys(state).forEach(id => {
+                state[id].playing = false;
+                state[id].step = 0;
+                let btn = document.getElementById(`btn-play-${id}`);
+                if(btn) { btn.innerHTML = "▶ Auto-Play"; btn.classList.remove('danger'); btn.classList.add('primary'); }
+                render(id);
+            });
+            setActivePanel('c1-sin');
+        }
+
+        document.getElementById('slider-speed').addEventListener('input', (e) => {
+            velocity = parseFloat(e.target.value);
+            document.getElementById('speed-val').innerText = velocity.toFixed(2) + 'x';
+            const dur = (0.5 / velocity).toFixed(2);
+            document.querySelectorAll('.flying-packet').forEach(p => {
+                p.style.transitionDuration = `top ${dur}s, left ${dur}s, opacity 0.2s, background-color 0.2s, border-color 0.2s, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)`;
+            });
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return; 
+            if (e.key === 'ArrowRight') {
+                step(activePanelId, 1);
+                e.preventDefault(); 
+            } else if (e.key === 'ArrowLeft') {
+                step(activePanelId, -1);
+                e.preventDefault(); 
+            }
+        });
+
+        window.onload = () => { initScrubbers(); resetAll(); };
     </script>
     <script src="../scripts/raft-engine.js"></script>
 </body>

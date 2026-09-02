@@ -1,4 +1,4 @@
-# Proyecto de animaciones RAFT para Sistemas Distribuidos - Cátedra Espina (TA050)
+# Animaciones RAFT para TA050/7574 Sistemas Distribuidos I - Cátedra Espina (TA050)
 
 ## Descripción
 
@@ -9,9 +9,7 @@ de mostrar el algoritmo de replicación y consenso de raft
 
 - AppendEntries 
 - Fast Backup
-- Inyección de scripts en páginas (véase preview.html)
-
+- Log Compaction
 
 ## TODO
-
-- Log Compaction : Mejorar y denotar la diferencia entre un log completamente desactualizado
+- Font de las presentaciones a matchear con las de la web del curso ([fiubata050.github.io](https://fiubata050.github.io/))
