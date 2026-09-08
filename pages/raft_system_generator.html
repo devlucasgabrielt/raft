@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Generador Raft para Presentaciones (Con Líder por Asterisco)</title>
+    <!-- html2canvas para exportar la imagen -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #F8F9FA;
+            --text-main: #212529;
+            --border-light: #DEE2E6;
+            --border-heavy: #343A40;
+            --leader-bg: #E6F4EA;
+            --leader-border: #1E8E3E;
+            --leader-text: #0F5132;
+            --follower-bg: #E8F0FE;
+            --follower-border: #1A73E8;
+            --follower-text: #084298;
+            --scale-factor: 1;
+            --cell-width: 70px;
+            --label-width: 110px;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .generator-container, .actions-bar {
+            width: 100%;
+            max-width: 98vw;
+            box-sizing: border-box;
+        }
+
+        .generator-container {
+            background: #FFFFFF;
+            border: 2px solid #CED4DA;
+            border-radius: 12px;
+            padding: 20px 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+
+        h2 { margin-top: 0; color: #343A40; border-bottom: 2px solid #DEE2E6; padding-bottom: 10px; }
+
+        .form-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .form-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        label { font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        input[type="text"], textarea {
+            padding: 10px; font-size: 15px; border: 2px solid #CED4DA; border-radius: 6px; outline: none; font-family: monospace;
+        }
+        input[type="text"]:focus, textarea:focus { border-color: var(--follower-border); }
+
+        .slider-group {
+            background: #F1F3F5;
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: 1px solid #CED4DA;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 12px;
+        }
+        .slider-group input[type="range"] { flex: 1; cursor: pointer; }
+
+        .btn-primary {
+            padding: 10px 20px; font-size: 15px; font-weight: bold; cursor: pointer;
+            background: var(--follower-border); color: #FFF; border: none; border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .btn-primary:hover { background: #174EA6; }
+
+        .btn-preset {
+            padding: 8px 14px; font-size: 13px; font-weight: bold; cursor: pointer;
+            background: #6C757D; color: #FFF; border: none; border-radius: 6px;
+            transition: background 0.2s; height: 38px;
+        }
+        .btn-preset:hover { background: #5A6268; }
+
+        .btn-success {
+            padding: 12px 24px; font-size: 16px; font-weight: bold; cursor: pointer;
+            background: #1E8E3E; color: #FFF; border: none; border-radius: 8px;
+            transition: background 0.2s; display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 4px 10px rgba(30, 142, 62, 0.3);
+        }
+        .btn-success:hover { background: #135E28; }
+
+        /* Contenedor de preview centralizado */
+        .preview-wrapper {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            box-sizing: border-box;
+            overflow-x: auto;
+            padding: 10px 0;
+        }
+
+        #capture-area {
+            background: #FFFFFF;
+            padding: calc(30px * var(--scale-factor));
+            border-radius: 12px;
+            border: 2px solid #CED4DA;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+            display: inline-block;
+            box-sizing: border-box;
+        }
+
+        table.board {
+            width: auto;
+            border-collapse: collapse;
+            margin-bottom: 0;
+        }
+
+        th, td { padding: 0; margin: 0; vertical-align: middle; box-sizing: border-box; }
+
+        .idx-header {
+            font-weight: 800; 
+            font-size: calc(16px * var(--scale-factor)); 
+            color: #495057;
+            border-bottom: calc(3px * var(--scale-factor)) solid var(--border-light); 
+            padding-bottom: calc(10px * var(--scale-factor)); 
+            text-align: center;
+            width: var(--cell-width);
+        }
+
+        .ellipsis-header {
+            font-weight: 800; 
+            font-size: calc(18px * var(--scale-factor)); 
+            color: #6C757D;
+            border-bottom: calc(3px * var(--scale-factor)) solid var(--border-light); 
+            padding-bottom: calc(10px * var(--scale-factor)); 
+            text-align: center;
+            width: calc(var(--cell-width) * 0.8);
+        }
+
+        .td-label { 
+            padding: calc(8px * var(--scale-factor)) calc(15px * var(--scale-factor)) calc(8px * var(--scale-factor)) 0; 
+            width: var(--label-width); 
+        }
+        
+        .node-label {
+            font-size: calc(18px * var(--scale-factor)); 
+            font-weight: bold; 
+            text-align: center; 
+            height: calc(50px * var(--scale-factor)); 
+            width: 100%;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; 
+            border: 2px solid transparent; 
+            box-sizing: border-box;
+        }
+        .leader-label { background: var(--leader-bg); border-color: var(--leader-border); color: var(--leader-text); }
+        .follower-label { background: var(--follower-bg); border-color: var(--follower-border); color: var(--follower-text); }
+
+        .td-cell { padding: calc(6px * var(--scale-factor)) calc(4px * var(--scale-factor)); text-align: center; width: var(--cell-width); }
+        
+        .cell {
+            width: var(--cell-width); 
+            height: calc(50px * var(--scale-factor)); 
+            font-size: calc(18px * var(--scale-factor)); 
+            font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; 
+            box-sizing: border-box; 
+            margin: 0 auto;
+        }
+
+        .empty-cell { background: transparent; color: transparent; border: 1px solid transparent; }
+        .has-data { background: #E9ECEF; color: var(--text-main); border: calc(2px * var(--scale-factor)) solid #ADB5BD; }
+        .ellipsis-cell { background: #F8F9FA; color: #6C757D; border: calc(2px * var(--scale-factor)) dashed #CED4DA; width: calc(var(--cell-width) * 0.8); }
+
+        .actions-bar {
+            margin-top: 20px;
+            display: flex;
+            justify-content: flex-end;
+            max-width: 98vw;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="generator-container">
+        <h2>🛠️ Generador de Sistemas Raft</h2>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="indices-input">Índices (Usa <code>...</code> para saltos masivos):</label>
+                <input type="text" id="indices-input" value="10, 11, 12, 13">
+            </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 5px; align-items: flex-end;">
+            <div class="form-group">
+                <label for="nodes-input">Estados de los Nodos (Usa <code>*</code> junto al servidor para marcar el líder, ej: <code>S1*:</code>):</label>
+            </div>
+            <button class="btn-preset" onclick="loadMassivePreset()">Cargar Ejemplo con index > 1000</button>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 12px;">
+            <textarea id="nodes-input" rows="3">S1*: 5, 6, 7
+S2: 5, 8
+S3: 5, 8</textarea>
+        </div>
+
+        <div class="slider-group">
+            <label for="size-slider"><b>Ajustar Tamaño General:</b></label>
+            <input type="range" id="size-slider" min="0.6" max="2.0" step="0.1" value="1.0" oninput="updateScale(this.value)">
+            <span id="scale-val" style="font-family: monospace; font-weight: bold; width: 45px;">1.0x</span>
+        </div>
+
+        <div class="slider-group">
+            <label for="size-x-slider"><b>Ajustar Ancho de Celdas de Log (Eje X):</b></label>
+            <input type="range" id="size-x-slider" min="40" max="120" step="2" value="70" oninput="updateScaleX(this.value)">
+            <span id="scale-x-val" style="font-family: monospace; font-weight: bold; width: 45px;">70px</span>
+        </div>
+
+        <div class="slider-group">
+            <label for="label-width-slider"><b>Ajustar Ancho de Servidores:</b></label>
+            <input type="range" id="label-width-slider" min="70" max="180" step="5" value="110" oninput="updateLabelWidth(this.value)">
+            <span id="label-width-val" style="font-family: monospace; font-weight: bold; width: 45px;">110px</span>
+        </div>
+
+        <button class="btn-primary" onclick="generateBoard()">Actualizar Vista Previa</button>
+    </div>
+
+    <div class="preview-wrapper">
+        <div id="capture-area">
+            <table class="board" id="dynamic-board">
+            </table>
+        </div>
+    </div>
+
+    <div class="actions-bar">
+        <button class="btn-success" onclick="downloadImage()">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Generar imagen
+        </button>
+    </div>
+
+    <script>
+        function parseInputList(str) {
+            return str.split(/[\s,]+/).filter(Boolean);
+        }
+
+        function updateScale(val) {
+            document.documentElement.style.setProperty('--scale-factor', val);
+            document.getElementById('scale-val').innerText = parseFloat(val).toFixed(1) + 'x';
+        }
+
+        function updateScaleX(val) {
+            document.documentElement.style.setProperty('--cell-width', val + 'px');
+            document.getElementById('scale-x-val').innerText = val + 'px';
+        }
+
+        function updateLabelWidth(val) {
+            document.documentElement.style.setProperty('--label-width', val + 'px');
+            document.getElementById('label-width-val').innerText = val + 'px';
+        }
+
+        function loadMassivePreset() {
+            document.getElementById('indices-input').value = "1, 2, 3, 4, 5, ..., 1500, 1501, 1502, 1503";
+            document.getElementById('nodes-input').value = 
+`S1*: 1, 2, 2, 2, 2, ..., 32, 33, 33
+S2: 1, 2, 2, 2, 2, ..., 32, 33, 33
+S3: 1, 2, 2, 2, 2, ..., 32, 32, 32
+S4: 1, 1, 2
+S5: 1,`;
+            updateScaleX(45);
+            document.getElementById('size-x-slider').value = 45;
+            generateBoard();
+        }
+
+        function generateBoard() {
+            const rawIndices = document.getElementById('indices-input').value;
+            const indices = parseInputList(rawIndices);
+            
+            const rawNodes = document.getElementById('nodes-input').value.trim().split('\n');
+            const table = document.getElementById('dynamic-board');
+            
+            let html = '<thead><tr><th style="width: var(--label-width);"></th>';
+            indices.forEach(idx => {
+                if (idx === '...') {
+                    html += `<th class="ellipsis-header">...</th>`;
+                } else {
+                    html += `<th class="idx-header">${idx}</th>`;
+                }
+            });
+            html += '</tr></thead><tbody>';
+
+            rawNodes.forEach((line) => {
+                if (!line.includes(':')) return;
+                const parts = line.split(':');
+                
+                let rawName = parts[0].trim();
+                
+                const isLeader = rawName.includes('*');
+                
+                const cleanName = rawName.replace(/\*/g, '').replace(/\s*[\(\[].*?[\)\]]/g, '').trim();
+
+                const values = parseInputList(parts[1]);
+
+                const labelClass = isLeader ? 'leader-label' : 'follower-label';
+
+                html += `<tr>`;
+                html += `<td class="td-label"><div class="node-label ${labelClass}">${cleanName}</div></td>`;
+
+                indices.forEach((idx, colIdx) => {
+                    const val = values[colIdx];
+                    
+                    if (val === undefined) {
+                        html += `<td class="td-cell"><div class="cell empty-cell"></div></td>`;
+                    } else if (idx === '...') {
+                        html += `<td class="td-cell"><div class="cell ellipsis-cell">...</div></td>`;
+                    } else if (val !== '-' && val !== '') {
+                        html += `<td class="td-cell"><div class="cell has-data">${val}</div></td>`;
+                    } else {
+                        html += `<td class="td-cell"><div class="cell empty-cell"></div></td>`;
+                    }
+                });
+
+                html += `</tr>`;
+            });
+
+            html += '</tbody>';
+            table.innerHTML = html;
+        }
+
+        function downloadImage() {
+            const captureElement = document.getElementById('capture-area');
+            html2canvas(captureElement, { scale: 3, backgroundColor: '#FFFFFF' }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'raft-slide.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+
+        window.onload = () => {
+            updateScale(1.0);
+            updateScaleX(70);
+            updateLabelWidth(110);
+            document.getElementById('size-slider').value = 1.0;
+            document.getElementById('size-x-slider').value = 70;
+            document.getElementById('label-width-slider').value = 110;
+            generateBoard();
+        };
+    </script>
+</body>
+</html>
