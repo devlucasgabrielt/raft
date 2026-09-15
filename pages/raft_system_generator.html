@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Generador Raft para Presentaciones (Con Líder por Asterisco)</title>
+    <title>Generador Raft para Presentaciones (Con Líder por Asterisco y Entradas de Cliente por Corchetes)</title>
     <!-- html2canvas para exportar la imagen -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
@@ -70,6 +70,18 @@
         }
         input[type="text"]:focus, textarea:focus { border-color: var(--follower-border); }
 
+        .preset-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #E9ECEF;
+            border-radius: 8px;
+            border: 1px solid #CED4DA;
+        }
+        .preset-bar span { width: 100%; font-size: 13px; font-weight: bold; color: #495057; margin-bottom: 2px; }
+
         .slider-group {
             background: #F1F3F5;
             padding: 10px 18px;
@@ -90,11 +102,11 @@
         .btn-primary:hover { background: #174EA6; }
 
         .btn-preset {
-            padding: 8px 14px; font-size: 13px; font-weight: bold; cursor: pointer;
-            background: #6C757D; color: #FFF; border: none; border-radius: 6px;
-            transition: background 0.2s; height: 38px;
+            padding: 6px 12px; font-size: 12.5px; font-weight: bold; cursor: pointer;
+            background: #FFF; color: #1A73E8; border: 1px solid #1A73E8; border-radius: 6px;
+            transition: all 0.2s; height: 34px;
         }
-        .btn-preset:hover { background: #5A6268; }
+        .btn-preset:hover { background: #E8F0FE; }
 
         .btn-success {
             padding: 12px 24px; font-size: 16px; font-weight: bold; cursor: pointer;
@@ -171,7 +183,7 @@
         .leader-label { background: var(--leader-bg); border-color: var(--leader-border); color: var(--leader-text); }
         .follower-label { background: var(--follower-bg); border-color: var(--follower-border); color: var(--follower-text); }
 
-        .td-cell { padding: calc(6px * var(--scale-factor)) calc(4px * var(--scale-factor)); text-align: center; width: var(--cell-width); }
+        .td-cell { padding: calc(6px * var(--scale-factor)) calc(4px * var(--scale-factor)); text-align: center; width: var(--cell-width); position: relative; }
         
         .cell {
             width: var(--cell-width); 
@@ -187,6 +199,29 @@
         .empty-cell { background: transparent; color: transparent; border: 1px solid transparent; }
         .has-data { background: #E9ECEF; color: var(--text-main); border: calc(2px * var(--scale-factor)) solid #ADB5BD; }
         .ellipsis-cell { background: #F8F9FA; color: #6C757D; border: calc(2px * var(--scale-factor)) dashed #CED4DA; width: calc(var(--cell-width) * 0.8); }
+        
+        /* Estilo para entrada del cliente (Naranja destacado basado en raft-theme.css)[cite: 2] */
+        .client-insert { 
+            border: calc(3px * var(--scale-factor)) solid #FF9800 !important; 
+            background-color: #FFF3CD !important;
+            color: #E65100 !important;
+        }
+        
+        .client-badge {
+            position: absolute;
+            top: calc(-10px * var(--scale-factor));
+            left: 50%;
+            transform: translateX(-50%);
+            background: #FF9800;
+            color: #FFF;
+            font-size: calc(9px * var(--scale-factor));
+            font-weight: bold;
+            padding: 1px 4px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            white-space: nowrap;
+            z-index: 20;
+        }
 
         .actions-bar {
             margin-top: 20px;
@@ -201,8 +236,19 @@
     <div class="generator-container">
         <h2>🛠️ Generador de Sistemas Raft</h2>
         
+        <!-- BARRA DE PRESETS RÁPIDOS DE ANIM-FAST-BACKUP -->
+        <div class="preset-bar">
+            <span>⚡ Generación Rápida (Casos de Fast Backup):</span>
+            <button class="btn-preset" onclick="loadPreset('case1')">Caso 1 (XLen)</button>
+            <button class="btn-preset" onclick="loadPreset('case2A')">Caso 2 - Ej A (XIndex)</button>
+            <button class="btn-preset" onclick="loadPreset('case2B')">Caso 2 - Ej B (XIndex)</button>
+            <button class="btn-preset" onclick="loadPreset('case3A')">Caso 3 - Ej A (XTerm)</button>
+            <button class="btn-preset" onclick="loadPreset('case3B')">Caso 3 - Ej B (XTerm)</button>
+            <button class="btn-preset" onclick="loadMassivePreset()">Ejemplo Masivo (n > 1000)</button>
+        </div>
+
         <div class="form-row">
-            <div class="form-group">
+            <div class="form-group" style="flex: 2;">
                 <label for="indices-input">Índices (Usa <code>...</code> para saltos masivos):</label>
                 <input type="text" id="indices-input" value="10, 11, 12, 13">
             </div>
@@ -210,15 +256,13 @@
 
         <div class="form-row" style="margin-bottom: 5px; align-items: flex-end;">
             <div class="form-group">
-                <label for="nodes-input">Estados de los Nodos (Usa <code>*</code> junto al servidor para marcar el líder, ej: <code>S1*:</code>):</label>
+                <label for="nodes-input">Estados de los Nodos (Usa <code>*</code> para líder, ej: <code>S1*:</code>. Envuelve en corchetes como <code>[6]</code> para entradas de cliente):</label>
             </div>
-            <button class="btn-preset" onclick="loadMassivePreset()">Cargar Ejemplo con index > 1000</button>
         </div>
         
         <div class="form-group" style="margin-bottom: 12px;">
-            <textarea id="nodes-input" rows="3">S1*: 5, 6, 7
-S2: 5, 8
-S3: 5, 8</textarea>
+            <textarea id="nodes-input" rows="3">S1*: 4, 6, 6, [6]
+S3: 4, 5, 5</textarea>
         </div>
 
         <div class="slider-group">
@@ -228,13 +272,13 @@ S3: 5, 8</textarea>
         </div>
 
         <div class="slider-group">
-            <label for="size-x-slider"><b>Ajustar Ancho de Celdas de Log (Eje X):</b></label>
+            <label for="size-x-slider"><b>Ancho de Celdas de Log (Eje X):</b></label>
             <input type="range" id="size-x-slider" min="40" max="120" step="2" value="70" oninput="updateScaleX(this.value)">
             <span id="scale-x-val" style="font-family: monospace; font-weight: bold; width: 45px;">70px</span>
         </div>
 
         <div class="slider-group">
-            <label for="label-width-slider"><b>Ajustar Ancho de Servidores:</b></label>
+            <label for="label-width-slider"><b>Ancho de Servidores:</b></label>
             <input type="range" id="label-width-slider" min="70" max="180" step="5" value="110" oninput="updateLabelWidth(this.value)">
             <span id="label-width-val" style="font-family: monospace; font-weight: bold; width: 45px;">110px</span>
         </div>
@@ -276,12 +320,44 @@ S3: 5, 8</textarea>
             document.getElementById('label-width-val').innerText = val + 'px';
         }
 
+        function loadPreset(type) {
+            document.getElementById('indices-input').value = "10, 11, 12, 13";
+            let nodesText = "";
+            
+            if (type === 'case1') {
+                nodesText = 
+`L*: 4, 6, 6, [6]
+S1: 4`;
+            } else if (type === 'case2A') {
+                nodesText = 
+`L*: 4, 6, 6, [6]
+S3: 4, 5, 5`;
+            } else if (type === 'case2B') {
+                nodesText = 
+`L*: 4, 4, 6, [6]
+S3: 4, 4, 5`;
+            } else if (type === 'case3A') {
+                nodesText = 
+`L*: 4, 6, 6, [6]
+S2: 4, 4, 4`;
+            } else if (type === 'case3B') {
+                nodesText = 
+`L*: 4, 4, 6, [6]
+S2: 4, 4, 4`;
+            }
+            
+            document.getElementById('nodes-input').value = nodesText;
+            document.getElementById('size-x-slider').value = 70;
+            updateScaleX(70);
+            generateBoard();
+        }
+
         function loadMassivePreset() {
-            document.getElementById('indices-input').value = "1, 2, 3, 4, 5, ..., 1500, 1501, 1502, 1503";
+            document.getElementById('indices-input').value = "1, 2, 3, 4, 5, 6, 7, ...,..., 1500, 1501, 1502, 1503";
             document.getElementById('nodes-input').value = 
-`S1*: 1, 2, 2, 2, 2, ..., 32, 33, 33
-S2: 1, 2, 2, 2, 2, ..., 32, 33, 33
-S3: 1, 2, 2, 2, 2, ..., 32, 32, 32
+`S1*: 1, 2, 2, 2, 2, 2, 4, ...,..., 32, 33, [33]
+S2: 1, 2, 2, 2, 2, 2, 4, ...,..., 32, 33, 33
+S3: 1, 2, 2, 3, 3, 3
 S4: 1, 1, 2
 S5: 1,`;
             updateScaleX(45);
@@ -311,13 +387,10 @@ S5: 1,`;
                 const parts = line.split(':');
                 
                 let rawName = parts[0].trim();
-                
                 const isLeader = rawName.includes('*');
-                
                 const cleanName = rawName.replace(/\*/g, '').replace(/\s*[\(\[].*?[\)\]]/g, '').trim();
 
                 const values = parseInputList(parts[1]);
-
                 const labelClass = isLeader ? 'leader-label' : 'follower-label';
 
                 html += `<tr>`;
@@ -331,7 +404,13 @@ S5: 1,`;
                     } else if (idx === '...') {
                         html += `<td class="td-cell"><div class="cell ellipsis-cell">...</div></td>`;
                     } else if (val !== '-' && val !== '') {
-                        html += `<td class="td-cell"><div class="cell has-data">${val}</div></td>`;
+                        const isClientTarget = val.startsWith('[') && val.endsWith(']');
+                        const cleanVal = isClientTarget ? val.slice(1, -1).trim() : val;
+                        
+                        const cellClass = isClientTarget ? 'cell has-data client-insert' : 'cell has-data';
+                        const badgeHtml = isClientTarget ? `<div class="client-badge">Client</div>` : '';
+                        
+                        html += `<td class="td-cell">${badgeHtml}<div class="${cellClass}">${cleanVal}</div></td>`;
                     } else {
                         html += `<td class="td-cell"><div class="cell empty-cell"></div></td>`;
                     }

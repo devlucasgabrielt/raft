@@ -5,7 +5,6 @@
     <title>Raft Fast Backup - Casos Dinámicos</title>
     <link rel="stylesheet" href="../styles/raft-theme.css">
     <style>
-
         body {
             display: flex;
             flex-direction: column;
@@ -55,6 +54,26 @@
         button.danger { background: #DC3545; color: #FFF; border-color: #DC3545; }
         button.highlight-btn { background: #F9AB00; color: #000; border-color: #F9AB00; }
         button.highlight-btn:hover { background: #E69B00; }
+
+        /* Estilos para que el modal de ayuda abra hacia la izquierda del botón ? */
+        .case-title { display: flex; justify-content: space-between; align-items: center; position: relative; }
+        .help-container { position: relative; display: inline-block; }
+        .help-btn {
+            background: #1A73E8; color: #FFF; border: none; border-radius: 50%;
+            width: 26px; height: 26px; font-weight: bold; font-size: 14px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        }
+        .help-btn:hover { background: #174EA6; }
+        
+        .help-modal {
+            display: none; position: absolute; left: 35px; top: -5px; width: 390px;
+            background: #FFF; border: 2px solid #1A73E8; border-radius: 8px; padding: 15px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 1000; font-size: 13.5px;
+            font-weight: normal; color: #343A40; line-height: 1.5; text-align: left;
+        }
+        .help-modal.show { display: block; }
+        .help-modal h4 { margin: 0 0 8px 0; color: #1A73E8; font-size: 14.5px; }
     </style>
 </head>
 <body>
@@ -67,11 +86,18 @@
             <button onclick="resetAll()" class="action-btn">🔄 Reiniciar Todo</button>
         </div>
 
-        <!-- =========================================================
-             CASO 1: XLEN (LOG DEMASIADO CORTO)
-             ========================================================= -->
+        <!-- CASO 1 -->
         <div class="case-container" id="case-c1">
-            <div class="case-title">Caso 1: Log del follower corto respecto al lider (Falla por XLen)</div>
+            <div class="case-title">
+                <span>Caso 1: Log del follower corto respecto al lider (XLen relevante)</span>
+                <div class="help-container">
+                    <button class="help-btn" onclick="toggleHelp('help-c1')">?</button>
+                    <div class="help-modal" id="help-c1">
+                        <h4>Optimización XLen</h4>
+                        <p>Cuando el log del seguidor es más corto que el índice consultado por el líder, el seguidor rechaza informando su longitud total (<b>XLen</b>). Esto permite al líder saltar de inmediato al final del log del seguidor sin necesidad de decrementar de a uno.</p>
+                    </div>
+                </div>
+            </div>
             <table class="board" id="board-c1">
                 <thead>
                     <tr>
@@ -112,12 +138,30 @@
             </div>
         </div>
 
-        <!-- =========================================================
-             CASO 2: LÍDER SÍ TIENE EL TÉRMINO (CON CAROUSEL)
-             ========================================================= -->
+        <!-- CASO 2 -->
         <div class="case-container" id="case-c2">
-            <div class="case-title">Caso 2: Conflicto de Término (Líder SÍ lo tiene)</div>
-            
+            <div class="case-title">
+                <span>Caso 2: Conflicto de Término (Líder NO lo tiene, XIndex relevante)</span>
+                <div class="help-container">
+                    <button class="help-btn" onclick="toggleHelp('help-c2')">?</button>
+                    <div class="help-modal" id="help-c2">
+                        <h4>Algunas consideraciones a tener en cuenta:</h4>
+
+                        <p><ul><li>¿Porqué usamos XIndex, si cuando buscamos el término en el log del lider podemos parar justo en el término mas chico y guardar ese índice? (Ejemplo: Animación caso A paso 5, paramos la busqueda <b>en el líder</b> encontrando un término mas chico -4- con índice 10)</li>
+                        
+                        <br><b>OJO</b>, porque si bien a simple vista parece funcionar para este caso, <b>NO SIRVE como regla general para todos los casos.</b> <br>
+                        Contraejemplo: <br>
+                        Inicio idx 5 => F: [1,2,2,3,3] - L: [1,4] <br> Llega un comando al lider en el término 7, resolvé AppendEntries y fijate que no funciona la regla :) 
+
+                        </ul>
+
+                        <h4>Para pensar...</h4>
+                        <ul><li>Tenemos que buscar un término (número) en un 'arreglo' creciente... ¿Conocemos algún algoritmo de busqueda mejor que O(n)? Imagino que sí... (No es necesario que lo implementes en el TP, con busqueda lineal alcanza y sobra)<br>
+                        pero sí, es una optimización posible extra para agregar si se quisiera</ul></li>
+                    </div>
+                </div>
+            </div>
+
             <div class="carousel-tabs">
                 <button class="tab-btn active" id="tab-c2-A" onclick="switchExample('c2', 'A')">Ejemplo A: Líder [4, 6, 6]</button>
                 <button class="tab-btn" id="tab-c2-B" onclick="switchExample('c2', 'B')">Ejemplo B: Líder [4, 4, 6]</button>
@@ -133,7 +177,7 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td class="td-label"><div class="node-label follower-label" id="label-c2-F">S2</div></td>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c2-F">S3</div></td>
                         <td class="td-cell"><div class="cell" id="c-c2-f-10"></div></td><td class="td-cell"><div class="cell" id="c-c2-f-11"></div></td><td class="td-cell"><div class="cell" id="c-c2-f-12"></div></td><td class="td-cell"><div class="cell" id="c-c2-f-13"></div></td>
                         <td class="rpc-zone" rowspan="2"></td>
                     </tr>
@@ -151,7 +195,7 @@
 
             <div class="timeline-controls">
                 <div class="timeline-panel" id="panel-c2" onclick="setActivePanel('c2')">
-                    <div class="timeline-header"><span>Progreso de Sincronización</span><span>nextIndex[S2] = <span class="var-val" id="ni-c2">13</span></span></div>
+                    <div class="timeline-header"><span>Progreso de Sincronización</span><span>nextIndex[S3] = <span class="var-val" id="ni-c2">13</span></span></div>
                     <div class="step-desc" id="desc-c2"></div>
                     <input type="range" id="scrub-c2" min="0" value="0" onclick="event.stopPropagation()">
                     <div class="play-controls">
@@ -163,11 +207,19 @@
             </div>
         </div>
 
-        <!-- =========================================================
-             CASO 3: LÍDER NO TIENE EL TÉRMINO (CON CAROUSEL)
-             ========================================================= -->
+        <!-- CASO 3 -->
         <div class="case-container" id="case-c3">
-            <div class="case-title">Caso 3: Conflicto de Término (Líder NO lo tiene)</div>
+            <div class="case-title">
+                <span>Caso 3: Conflicto de Término (Líder SÍ lo tiene, XTerm relevante)</span>
+                <div class="help-container">
+                    <button class="help-btn" onclick="toggleHelp('help-c3')">?</button>
+                    <div class="help-modal" id="help-c3">
+                        <h4>Para pensar...</h4>
+                        <ul><li>Tenemos que buscar un término (número) en un 'arreglo' creciente... ¿Conocemos algún algoritmo de busqueda mejor que O(n)? Imagino que sí... (No es necesario que lo implementes en el TP, con busqueda lineal alcanza y sobra)<br>
+                        pero sí, es una optimización posible extra para agregar si se quisiera</ul></li>
+                    </div>
+                </div>
+            </div>
 
             <div class="carousel-tabs">
                 <button class="tab-btn active" id="tab-c3-A" onclick="switchExample('c3', 'A')">Ejemplo A: Líder [4, 6, 6]</button>
@@ -184,7 +236,7 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td class="td-label"><div class="node-label follower-label" id="label-c3-F">S3</div></td>
+                        <td class="td-label"><div class="node-label follower-label" id="label-c3-F">S2</div></td>
                         <td class="td-cell"><div class="cell" id="c-c3-f-10"></div></td><td class="td-cell"><div class="cell" id="c-c3-f-11"></div></td><td class="td-cell"><div class="cell" id="c-c3-f-12"></div></td><td class="td-cell"><div class="cell" id="c-c3-f-13"></div></td>
                         <td class="rpc-zone" rowspan="2"></td>
                     </tr>
@@ -202,7 +254,7 @@
 
             <div class="timeline-controls">
                 <div class="timeline-panel" id="panel-c3" onclick="setActivePanel('c3')">
-                    <div class="timeline-header"><span>Progreso de Sincronización</span><span>nextIndex[S3] = <span class="var-val" id="ni-c3">13</span></span></div>
+                    <div class="timeline-header"><span>Progreso de Sincronización</span><span>nextIndex[S2] = <span class="var-val" id="ni-c3">13</span></span></div>
                     <div class="step-desc" id="desc-c3"></div>
                     <input type="range" id="scrub-c3" min="0" value="0" onclick="event.stopPropagation()">
                     <div class="play-controls">
@@ -256,70 +308,70 @@
             { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
 
-        const c2_F_init = [4, 4, 4, undefined];
+        // CASO 2
+        const c2_F_init_A = [4, 5, 5, undefined];
         const C2_TL_A = [
-            { d: "Estado Inicial. S2 tiene bifurcación en el index 11.", lL: l_A_init, l: c2_F_init, ni: 13, h: null, pkt: null },
-            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_A_cmd, l: c2_F_init, ni: 13, cInsert: 13, pkt: null },
-            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
-            { d: "S2 revisa su index 12.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
-            { d: "¡Mismatch! S2 tiene Term 4, L envió Term 6.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
-            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4 y XIndex=10.", lL: l_A_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
-            { d: "L busca XTerm=4. ¡SÍ lo tiene! Su última aparición fue en index 10. Salta nextIndex=11.", lL: l_A_cmd, l: c2_F_init, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
-            { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c2_F_init, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "¡S2 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c2_F_init, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S2 detecta que sus index 11 y 12 chocan. ¡Borra lo divergente!", lL: l_A_cmd, l: c2_F_init, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S2 anexa [6, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
-            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
-            { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
-        ];
-
-        const C2_TL_B = [
-            { d: "Estado Inicial. S2 tiene bifurcación en el index 12.", lL: l_B_init, l: c2_F_init, ni: 13, h: null, pkt: null },
-            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_B_cmd, l: c2_F_init, ni: 13, cInsert: 13, pkt: null },
-            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
-            { d: "S2 revisa su index 12.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
-            { d: "¡Mismatch! S2 tiene Term 4, L envió Term 6.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
-            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4 y XIndex=10.", lL: l_B_cmd, l: c2_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
-            { d: "L busca XTerm=4. ¡SÍ lo tiene! Su última aparición fue en index 11. Salta nextIndex=12.", lL: l_B_cmd, l: c2_F_init, ni: 12, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(11, 4, '6, 6') }, tp: 11, te: [12, 13] },
-            { d: "L envía [6, 6] validando prevLogIndex=11.", lL: l_B_cmd, l: c2_F_init, ni: 12, h: 11, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
-            { d: "¡S2 revisa su index 11 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c2_F_init, ni: 12, h: 11, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
-            { d: "S2 detecta que su index 12 choca. ¡Borra lo divergente!", lL: l_B_cmd, l: c2_F_init, ni: 12, h: null, del: [12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
-            { d: "S2 anexa [6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 12, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
-            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: "", pkt: null },
-            { d: "¡Sincronización completa!", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
-        ];
-
-        // Datos para Caso 3 (Ejemplo A y Ejemplo B)
-        const c3_F_init_A = [4, 5, 5, undefined];
-        const C3_TL_A = [
-            { d: "Estado Inicial. S3 tiene Término 5 divergente.", lL: l_A_init, l: c3_F_init_A, ni: 13, h: null, pkt: null },
-            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, cInsert: 13, pkt: null },
-            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
-            { d: "S3 revisa su index 12.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
-            { d: "¡Mismatch! S3 tiene Term 5, L envió Term 6.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
-            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=11.", lL: l_A_cmd, l: c3_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
-            { d: "L busca XTerm=5. ¡NO lo tiene! Usa directamente el XIndex como nextIndex=11.", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
-            { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "¡S3 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S3 detecta divergencia en 11 y 12. ¡Borra lo divergente!", lL: l_A_cmd, l: c3_F_init_A, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "Estado Inicial. S3 tiene Término 5 divergente.", lL: l_A_init, l: c2_F_init_A, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S3 revisa su index 12.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S3 tiene Term 5, L envió Term 6.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=11.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "L busca XTerm=5. ¡NO lo tiene! Usa directamente el XIndex como nextIndex=11.", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S3 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S3 detecta divergencia en 11 y 12. ¡Borra lo divergente!", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
             { d: "S3 anexa [6, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
             { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
             { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
 
-        const c3_F_init_B = [4, 4, 5, undefined];
-        const C3_TL_B = [
-            { d: "Estado Inicial. S3 tiene Término 5 divergente en el index 12.", lL: l_B_init, l: c3_F_init_B, ni: 13, h: null, pkt: null },
-            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, cInsert: 13, pkt: null },
-            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
-            { d: "S3 revisa su index 12.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
-            { d: "¡Mismatch! S3 tiene Term 5, L envió Term 6.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 5, 12, 13) } },
-            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=12.", lL: l_B_cmd, l: c3_F_init_B, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 12, 13) } },
-            { d: "L busca XTerm=5. ¡NO lo tiene! Usa directamente el XIndex como nextIndex=12.", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(11, 4, '6, 6') }, tp: 11, te: [12, 13] },
-            { d: "L envía [6, 6] validando prevLogIndex=11.", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: 11, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
-            { d: "¡S3 revisa su index 11 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: 11, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
-            { d: "S3 detecta divergencia en 12. ¡Borra lo divergente!", lL: l_B_cmd, l: c3_F_init_B, ni: 12, h: null, del: [12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+        const C2_TL_B = [
+            { d: "Estado Inicial. S3 tiene Término 5 divergente en el index 12.", lL: l_B_init, l: c2_F_init_A, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S3 revisa su index 12.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S3 tiene Term 5, L envió Term 6.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=12.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, 13) } },
+            { d: "L busca XTerm=5. ¡NO lo tiene! Usa directamente el XIndex como nextIndex=12.", lL: l_B_cmd, l: c2_F_init_A, ni: 12, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(11, 4, '6, 6') }, tp: 11, te: [12, 13] },
+            { d: "L envía [6, 6] validando prevLogIndex=11.", lL: l_B_cmd, l: c2_F_init_A, ni: 12, h: 11, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "¡S3 revisa su index 11 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c2_F_init_A, ni: 12, h: 11, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "S3 detecta divergencia en 12. ¡Borra lo divergente!", lL: l_B_cmd, l: c2_F_init_A, ni: 12, h: null, del: [12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
             { d: "S3 anexa [6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 12, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: "", pkt: null },
+            { d: "¡Sincronización completa!", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
+        ];
+
+        // CASO 3
+        const c3_F_init = [4, 4, 4, undefined];
+        const C3_TL_A = [
+            { d: "Estado Inicial. S2 tiene bifurcación en el index 11.", lL: l_A_init, l: c3_F_init, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_A_cmd, l: c3_F_init, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c3_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S2 revisa su index 12.", lL: l_A_cmd, l: c3_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S2 tiene Term 4, L envió Term 6.", lL: l_A_cmd, l: c3_F_init, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4 y XIndex=10.", lL: l_A_cmd, l: c3_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "L busca XTerm=4. ¡SÍ lo tiene! Su última aparición fue en index 11. Salta nextIndex=11.", lL: l_A_cmd, l: c3_F_init, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
+            { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c3_F_init, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "¡S2 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c3_F_init, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S2 detecta que sus index 11 y 12 chocan. ¡Borra lo divergente!", lL: l_A_cmd, l: c3_F_init, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
+            { d: "S2 anexa [6, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
+            { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
+        ];
+
+        const C3_TL_B = [
+            { d: "Estado Inicial. S2 tiene bifurcación en el index 12.", lL: l_B_init, l: c3_F_init, ni: 13, h: null, pkt: null },
+            { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_B_cmd, l: c3_F_init, ni: 13, cInsert: 13, pkt: null },
+            { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_B_cmd, l: c3_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
+            { d: "S2 revisa su index 12.", lL: l_B_cmd, l: c3_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
+            { d: "¡Mismatch! S2 tiene Term 4, L envió Term 6.", lL: l_B_cmd, l: c3_F_init, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "S2 rechaza. FAST BACKUP: Retorna XTerm=4 y XIndex=10.", lL: l_B_cmd, l: c3_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 4, 10, 13) } },
+            { d: "L busca XTerm=4. ¡SÍ lo tiene! Su última aparición fue en index 11. Salta nextIndex=12.", lL: l_B_cmd, l: c3_F_init, ni: 12, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(11, 4, '6, 6') }, tp: 11, te: [12, 13] },
+            { d: "L envía [6, 6] validando prevLogIndex=11.", lL: l_B_cmd, l: c3_F_init, ni: 12, h: 11, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "¡S2 revisa su index 11 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c3_F_init, ni: 12, h: 11, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "S2 detecta que su index 12 choca. ¡Borra lo divergente!", lL: l_B_cmd, l: c3_F_init, ni: 12, h: null, del: [12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
+            { d: "S2 anexa [6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 12, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
             { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: "", pkt: null },
             { d: "¡Sincronización completa!", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
@@ -345,6 +397,20 @@
             const p = document.getElementById(`panel-${id}`);
             if(p) p.classList.add('active-panel');
         }
+
+        function toggleHelp(modalId) {
+            const modal = document.getElementById(modalId);
+            document.querySelectorAll('.help-modal').forEach(m => {
+                if(m.id !== modalId) m.classList.remove('show');
+            });
+            modal.classList.toggle('show');
+        }
+
+        window.addEventListener('click', (e) => {
+            if (!e.target.closest('.help-container')) {
+                document.querySelectorAll('.help-modal').forEach(m => m.classList.remove('show'));
+            }
+        });
 
         function switchExample(cid, example) {
             setActivePanel(cid);
