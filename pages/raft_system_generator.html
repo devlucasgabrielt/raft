@@ -116,6 +116,14 @@
         }
         .btn-success:hover { background: #135E28; }
 
+        .btn-secondary {
+            padding: 12px 24px; font-size: 16px; font-weight: bold; cursor: pointer;
+            background: #4A5568; color: #FFF; border: none; border-radius: 8px;
+            transition: background 0.2s; display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 4px 10px rgba(74, 85, 104, 0.3);
+        }
+        .btn-secondary:hover { background: #2D3748; }
+
         /* Contenedor de preview centralizado */
         .preview-wrapper {
             width: 100%;
@@ -227,6 +235,7 @@
             margin-top: 20px;
             display: flex;
             justify-content: flex-end;
+            gap: 12px;
             max-width: 98vw;
         }
     </style>
@@ -294,6 +303,10 @@ S3: 4, 5, 5</textarea>
     </div>
 
     <div class="actions-bar">
+        <button class="btn-secondary" onclick="copyImageToClipboard()">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+            Copiar al portapapeles
+        </button>
         <button class="btn-success" onclick="downloadImage()">
             <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
             Generar imagen
@@ -430,6 +443,27 @@ S5: 1,`;
                 link.download = 'raft-slide.png';
                 link.href = canvas.toDataURL('image/png');
                 link.click();
+            });
+        }
+
+        function copyImageToClipboard() {
+            const captureElement = document.getElementById('capture-area');
+            html2canvas(captureElement, { scale: 3, backgroundColor: '#FFFFFF' }).then(canvas => {
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        alert('Error al generar la imagen para el portapapeles.');
+                        return;
+                    }
+                    try {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({ [blob.type]: blob })
+                        ]);
+                        alert('¡Imagen copiada al portapapeles con éxito!');
+                    } catch (err) {
+                        console.error('Error al copiar la imagen: ', err);
+                        alert('No se pudo copiar la imagen al portapapeles. Asegúrate de estar usando HTTPS o localhost.');
+                    }
+                }, 'image/png');
             });
         }
 
