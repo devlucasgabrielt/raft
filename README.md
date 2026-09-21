@@ -12,5 +12,5 @@ para mostrar la replicación de logs y consenso de raft
 - Log Compaction + Replicación de AppendEntries con SnapShots
 
 ## Comentarios 
-- Realizado como colaboración para la materia ([Sistemas Distribuidos I](https://fiubata050.github.io/))
+- Realizado como colaboración para la materia [Sistemas Distribuidos I](https://fiubata050.github.io/)
 - Si encontrás algún error, abrí un issue y lo discutimos!
