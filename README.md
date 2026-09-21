@@ -2,14 +2,15 @@
 
 ## Descripción
 
-Proyecto de animaciones sobre el algoritmo RAFT, creado para explicar de forma visual en clase y en la web formas didácticas
-de mostrar el algoritmo de replicación y consenso de raft
+Proyecto de animaciones sobre el algoritmo RAFT, creado para explicar de forma visual en clase y para tener animaciones didácticas
+para mostrar la replicación de logs y consenso de raft
 
 ## Realizado
 
-- AppendEntries 
+- AppendEntries
 - Fast Backup
-- Log Compaction
+- Log Compaction + Replicación de AppendEntries con SnapShots
 
-## TODO
-- Font de las presentaciones a matchear con las de la web del curso ([fiubata050.github.io](https://fiubata050.github.io/))
+## Comentarios 
+- Realizado como colaboración para la materia ([Sistemas Distribuidos I](https://fiubata050.github.io/))
+- Si encontrás algún error, abrí un issue y lo discutimos!

@@ -4,15 +4,16 @@
     <meta charset="UTF-8">
     <title>Raft Fast Backup - Casos Dinámicos</title>
     <link rel="stylesheet" href="../styles/raft-theme.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Fira+Code:wght@500;700&display=swap" rel="stylesheet">
     <style>
-        body {
+        /*body {
             display: flex;
             flex-direction: column;
             align-items: center;
             background-color: var(--bg-color, #F8F9FA);
             margin: 0;
             padding: 20px;
-        }
+        }*/
 
         .raft-wrapper {
             display: flex;
@@ -86,7 +87,7 @@
         </div>
 
         <!-- CASO 1 -->
-        <div class="case-container" id="case-c1">
+        <div class="case-container-fast-backup" id="case-c1">
             <div class="case-title">
                 <span>Caso 1: Log del follower corto respecto al lider (XLen relevante)</span>
                 <div class="help-container">
@@ -138,7 +139,7 @@
         </div>
 
         <!-- CASO 2 -->
-        <div class="case-container" id="case-c2">
+        <div class="case-container-fast-backup" id="case-c2">
             <div class="case-title">
                 <span>Caso 2: Conflicto de Término (Líder NO lo tiene, XIndex relevante)</span>
                 <div class="help-container">
@@ -207,7 +208,7 @@
         </div>
 
         <!-- CASO 3 -->
-        <div class="case-container" id="case-c3">
+        <div class="case-container-fast-backup" id="case-c3">
             <div class="case-title">
                 <span>Caso 3: Conflicto de Término (Líder SÍ lo tiene, XTerm relevante)</span>
                 <div class="help-container">
@@ -271,15 +272,35 @@
     <!-- Scripts de Datos y Funcionalidad -->
     <script>
         const rpcTitle = (title, color) => `<div style="border-bottom: 2px solid ${color}; margin-bottom: 8px; padding-bottom: 6px; font-size: 15px; font-weight: 900; text-transform: uppercase; text-align: center; color: ${color}; letter-spacing: 1px;">${title}</div>`;
-        const reqTxt = (idx, term, entries) => `${rpcTitle('AppendEntries', '#856404')}<span style="color:#856404">prevLogIndex = ${idx}<br>prevLogTerm = ${term}<br>entries = [${entries}]</span>`;
-        const accTxt = () => `${rpcTitle('Response', '#155724')}<span style="color:#155724">term = 6<br>success = true</span>`;
         
-        // Estructura RPC completa mostrando valores centinela (-1) para campos inactivos
+        const reqTxt = (idx, term, entries) => `
+            <div style="text-align: center;">
+                ${rpcTitle('AppendEntries', '#856404')}
+                <span style="color:#856404; display: inline-block;">
+                    prevLogIndex = ${idx}<br>
+                    prevLogTerm = ${term}<br>
+                    entries = [${entries}]
+                </span>
+            </div>`;
+
+        const accTxt = () => `
+            <div style="text-align: center;">
+                ${rpcTitle('Response', '#155724')}
+                <span style="color:#155724; display: inline-block;">
+                    term = 6<br>
+                    success = true
+                </span>
+            </div>`;
+        
         const fastRejTxt = (term, xterm, xindex, xlen) => {
-            let txt = `${rpcTitle('Response', '#721C24')}<span style="color:#721C24; display:block; line-height:1.4;">term = ${term}<br>success = false`;
-            txt += `<br><b>XTerm</b> = ${xterm}`;
-            txt += `<br><b>XIndex</b> = ${xindex}`;
-            txt += `<br><b>XLen</b> = ${xlen}</span>`;
+            let txt = `<div style="text-align: center;">${rpcTitle('Response', '#721C24')}`;
+            txt += `<span style="color:#721C24; display: inline-block; line-height: 1.4">`;
+            txt += `term = ${term}<br>`;
+            txt += `success = false<br>`;
+            txt += `<b>XTerm</b> = ${xterm}<br>`;
+            txt += `<b>XIndex</b> = ${xindex}<br>`;
+            txt += `<b>XLen</b> = ${xlen}`;
+            txt += `</span></div>`;
             return txt;
         };
         
@@ -300,7 +321,7 @@
             { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
             { d: "S1 busca el index 12.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
             { d: "El log de S1 termina en 10. No tiene index 12. Falla.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: 12, e: `<span style="color:#B31412">❌ Rechazado: Log muy corto!</span>`, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, -1, -1, 11) } },
-            { d: "S1 rechaza. FAST BACKUP: Retorna XLen=11 (XTerm y XIndex con centinela -1).", lL: l_A_cmd, l: c1_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, -1, -1, 11) } },
+            { d: "S1 rechaza. FAST BACKUP: Retorna XLen=11 (XTerm y XIndex con valor defecto -1).", lL: l_A_cmd, l: c1_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, -1, -1, 11) } },
             { d: "L recibe XLen=11. ¡Salta nextIndex directamente a 11!", lL: l_A_cmd, l: c1_F_init, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
             { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c1_F_init, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
             { d: "¡S1 TIENE index 10 con Term 4! MATCH exitoso.", lL: l_A_cmd, l: c1_F_init, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
@@ -317,12 +338,12 @@
             { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
             { d: "S3 revisa su index 12.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
             { d: "¡Mismatch! S3 tiene Term 5, L envió Term 6.", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: 12, e: mismatch, pkt: { loc: 'F', type: 'reject', txt: fastRejTxt(6, 5, 11, -1) } },
-            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=11 (XLen con centinela -1).", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, -1) } },
+            { d: "S3 rechaza. FAST BACKUP: Retorna XTerm=5 y XIndex=11 (XLen con valor defecto -1).", lL: l_A_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'reject', txt: fastRejTxt(6, 5, 11, -1) } },
             { d: "L busca XTerm=5. ¡NO lo tiene! Usa directamente el XIndex como nextIndex=11.", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') }, tp: 10, te: [11, 12, 13] },
             { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
             { d: "¡S3 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
             { d: "S3 detecta divergencia en 11 y 12. ¡Borra lo divergente!", lL: l_A_cmd, l: c2_F_init_A, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S3 anexa [6, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "S3 anexa [6, 6, 6]. Su log ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
             { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
             { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
@@ -338,7 +359,7 @@
             { d: "L envía [4, 6, 6] validando prevLogIndex=10.", lL: l_B_cmd, l: c2_F_init_A, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '4, 6, 6') } },
             { d: "¡S3 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c2_F_init_A, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '4, 6, 6') } },
             { d: "S3 detecta divergencia en 11 y 12. ¡Borra lo divergente!", lL: l_B_cmd, l: c2_F_init_A, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '4, 6, 6') } },
-            { d: "S3 anexa [4, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "S3 anexa [4, 6, 6]. Su log ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
             { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: "", pkt: null },
             { d: "¡Sincronización completa!", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
@@ -356,7 +377,7 @@
             { d: "L envía [6, 6, 6] validando prevLogIndex=10.", lL: l_A_cmd, l: c3_F_init, ni: 11, h: 10, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
             { d: "¡S2 revisa su index 10 y TIENE Término 4! MATCH EXITOSO.", lL: l_A_cmd, l: c3_F_init, ni: 11, h: 10, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
             { d: "S2 detecta que sus index 11 y 12 chocan. ¡Borra lo divergente!", lL: l_A_cmd, l: c3_F_init, ni: 11, h: null, del: [11, 12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(10, 4, '6, 6, 6') } },
-            { d: "S2 anexa [6, 6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "S2 anexa [6, 6, 6]. Su log ya es idéntica a la del líder.", lL: l_A_cmd, l: l_A_cmd, ni: 11, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
             { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: "", pkt: null },
             { d: "¡Sincronización completa!", lL: l_A_cmd, l: l_A_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
@@ -372,7 +393,7 @@
             { d: "L envía [6, 6] validando prevLogIndex=11.", lL: l_B_cmd, l: c3_F_init, ni: 12, h: 11, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
             { d: "¡S2 revisa su index 11 y TIENE Término 4! MATCH EXITOSO.", lL: l_B_cmd, l: c3_F_init, ni: 12, h: 11, e: match, pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
             { d: "S2 detecta que su index 12 choca. ¡Borra lo divergente!", lL: l_B_cmd, l: c3_F_init, ni: 12, h: null, del: [12], e: "<span style='color:#B31412'>❌ Borrando divergencias...</span>", pkt: { loc: 'F', type: 'request', txt: reqTxt(11, 4, '6, 6') } },
-            { d: "S2 anexa [6, 6]. Su bitácora ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 12, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
+            { d: "S2 anexa [6, 6]. Su log ya es idéntica a la del líder.", lL: l_B_cmd, l: l_B_cmd, ni: 12, h: null, e: "<span style='color:#0F5132'>✅ Entradas anexadas.</span>", pkt: { loc: 'L', type: 'accept', txt: accTxt() } },
             { d: "El REPLY (success=true) llega a L. L actualiza nextIndex=14.", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: "", pkt: null },
             { d: "¡Sincronización completa!", lL: l_B_cmd, l: l_B_cmd, ni: 14, h: null, e: synced, eL: null, pkt: null }
         ];
