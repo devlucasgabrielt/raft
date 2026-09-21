@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Raft AppendEntries</title>
     <link rel="stylesheet" href="../styles/raft-theme.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Fira+Code:wght@500;700&display=swap" rel="stylesheet">
     <style>
         /* Corrección de ancho máximo en la barra superior para alinearla perfectamente con el dashboard */
         .velocity-bar {
@@ -248,9 +249,25 @@
     <script>
         const rpcTitle = (title, color) => `<div style="border-bottom: 2px solid ${color}; margin-bottom: 8px; padding-bottom: 6px; font-size: 15px; font-weight: 900; text-align: center; color: ${color}; letter-spacing: 1px;">${title}</div>`;
 
-        const reqTxt = (idx, term, entries) => `${rpcTitle('AppendEntries', '#856404')}<span style="color:#856404">prevLogIndex = ${idx}</span><br><span style="color:#856404">prevLogTerm = ${term}</span><br><span style="color:#856404">entries = [${entries}]</span>`;
-        const accTxt = () => `${rpcTitle('Response', '#155724')}<span style="color:#155724">term = 6<br>success = true</span>`;
-        const rejTxt = () => `${rpcTitle('Response', '#721C24')}<span style="color:#721C24">term = 6<br>success = false</span>`;
+        const reqTxt = (idx, term, entries) => `
+            <div style="text-align: center;">
+                ${rpcTitle('AppendEntries', '#856404')}
+                <span style="color:#856404">prevLogIndex = ${idx}</span><br>
+                <span style="color:#856404">prevLogTerm = ${term}</span><br>
+                <span style="color:#856404">entries = [${entries}]</span>
+            </div>`;
+
+        const accTxt = () => `
+            <div style="text-align: center;">
+                ${rpcTitle('Response', '#155724')}
+                <span style="color:#155724">term = 6<br>success = true</span>
+            </div>`;
+
+        const rejTxt = () => `
+            <div style="text-align: center;">
+                ${rpcTitle('Response', '#721C24')}
+                <span style="color:#721C24">term = 6<br>success = false</span>
+            </div>`;
         
         const wait = `<span style="color:#6c757d">Evaluando AppendEntries...</span>`;
         const tooShort = `<span style="color:#B31412">❌ Rechazado: Log es demasiado corto</span>`;
