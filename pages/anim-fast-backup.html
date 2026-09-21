@@ -149,7 +149,7 @@
 
                         <p><ul><li>¿Porqué usamos XIndex, si cuando buscamos el término en el log del lider podemos parar justo en el término mas chico y guardar ese índice? (Ejemplo: Animación caso A paso 5, paramos la busqueda <b>en el líder</b> encontrando un término mas chico -4- con índice 10)</li>
 
-                        <br><b>OJO</b>, porque si bien a simple vista parece funcionar para este caso, <b>NO SIRVE como regla general para todos los casos.</b> <br>
+                        <br><b>OJO</b>, porque si bien a simple vista parece funcionar para este caso, <b>NO SIRVE como regla general para todos los casos.</b> <br><br>
                         Contraejemplo: <br>
                         Inicio idx 10 => F: [2,5,5,5] - L: [2,3,4,6] <br> Llega un comando al lider en el término 6 en el índice 14, resolvé AppendEntries y fijate que no funciona la regla :) 
 
@@ -157,7 +157,7 @@
 
                         <h4>Para pensar...</h4>
                         <ul><li>Tenemos que buscar un término (número) en un 'arreglo' ordenado de forma creciente... ¿Conocemos algún algoritmo de busqueda mejor que O(n)? Imagino que sí...<br></li></ul>
-                        <ul><li>¿Pero, vale la pena la implementacion? ¿Vamos a tener que recorrer O(n) filas hacia atrás para buscar un término?... <b>(Spoiler: No - Snapshots)</b></li></ul>  
+                        <ul><li>¿Pero, vale la pena la implementacion? ¿Vamos a tener que recorrer <b>n</b> filas hacia atrás para buscar un término?... <br><b>(Spoiler: No - Snapshots)</b></li></ul>  
                     </div>
                 </div>
             </div>
@@ -216,7 +216,7 @@
                     <div class="help-modal" id="help-c3">
                         <h4>Para pensar...</h4>
                         <ul><li>Tenemos que buscar un término (número) en un 'arreglo' ordenado de forma creciente... ¿Conocemos algún algoritmo de busqueda mejor que O(n)? Imagino que sí...<br></li></ul>
-                        <ul><li>¿Pero, vale la pena la implementacion? ¿Vamos a tener que recorrer O(n) filas hacia atrás para buscar un término?... <b>(Spoiler: No - Snapshots)</b></li></ul>  
+                        <ul><li>¿Pero, vale la pena la implementacion? ¿Vamos a tener que recorrer <b>n</b> filas hacia atrás para buscar un término?... <br><b>(Spoiler: No - Snapshots)</b></li></ul>
                     </div>
                 </div>
             </div>
@@ -316,7 +316,7 @@
 
         const c1_F_init = [4, undefined, undefined, undefined];
         const C1_TL = [
-            { d: "Estado Inicial. S1 tiene un log más corto [4].", lL: l_A_init, l: c1_F_init, ni: 13, h: null, pkt: null },
+            { d: "Estado Inicial. S1 tiene un log mucho más corto respecto al lider (len = 11).", lL: l_A_init, l: c1_F_init, ni: 13, h: null, pkt: null },
             { d: "Llega un comando de cliente. L anexa el Término 6 al index 13.", lL: l_A_cmd, l: c1_F_init, ni: 13, cInsert: 13, pkt: null },
             { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
             { d: "S1 busca el index 12.", lL: l_A_cmd, l: c1_F_init, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
