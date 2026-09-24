@@ -349,7 +349,7 @@
         ];
 
         const C2_TL_B = [
-            { d: "Estado Inicial. S3 tiene Término 5 divergente en el index 12.", lL: l_B_init, l: c2_F_init_A, ni: 13, h: null, pkt: null },
+            { d: "Estado Inicial. S3 tiene Término 5 divergente.", lL: l_B_init, l: c2_F_init_A, ni: 13, h: null, pkt: null },
             { d: "Llega comando. L anexa Término 6 al index 13.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, cInsert: 13, pkt: null },
             { d: "L intenta replicar el index 13. Valida contra prevLogIndex=12 y prevLogTerm=6.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, h: null, pkt: { loc: 'L', type: 'request', txt: reqTxt(12, 6, '6') }, tp: 12, te: [13] },
             { d: "S3 revisa su index 12.", lL: l_B_cmd, l: c2_F_init_A, ni: 13, h: 12, e: wait, pkt: { loc: 'F', type: 'request', txt: reqTxt(12, 6, '6') } },
